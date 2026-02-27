@@ -33,52 +33,11 @@ public:
     {
         setProcessChannelMode(QProcess::SeparateChannels);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         setChildProcessModifier([this] {
-            dup2(m_handleSlave, STDIN_FILENO);
-            dup2(m_handleSlave, STDOUT_FILENO);
-            dup2(m_handleSlave, STDERR_FILENO);
-
-            pid_t sid = setsid();
-            ioctl(m_handleSlave, TIOCSCTTY, 0);
-            tcsetpgrp(m_handleSlave, sid);
-
-        #if !defined(Q_OS_ANDROID) && !defined(Q_OS_FREEBSD)
-            // on Android imposible to put record to the 'utmp' file
-            struct utmpx utmpxInfo;
-            memset(&utmpxInfo, 0, sizeof(utmpxInfo));
-
-            strncpy(utmpxInfo.ut_user, qgetenv("USER"), sizeof(utmpxInfo.ut_user));
-
-            QString device(m_handleSlaveName);
-            if (device.startsWith("/dev/"))
-                device = device.mid(5);
-
-            QByteArray ba = device.toLatin1();
-            const char *d = ba.constData();
-
-            strncpy(utmpxInfo.ut_line, d, sizeof(utmpxInfo.ut_line));
-
-            strncpy(utmpxInfo.ut_id, d + strlen(d) - sizeof(utmpxInfo.ut_id), sizeof(utmpxInfo.ut_id));
-
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            utmpxInfo.ut_tv.tv_sec = tv.tv_sec;
-            utmpxInfo.ut_tv.tv_usec = tv.tv_usec;
-
-            utmpxInfo.ut_type = USER_PROCESS;
-            utmpxInfo.ut_pid = getpid();
-
-            utmpxname(_PATH_UTMPX);
-            setutxent();
-            pututxline(&utmpxInfo);
-            endutxent();
-
-        #if !defined(Q_OS_UNIX)
-            updwtmpx(_PATH_UTMPX, &loginInfo);
-        #endif
-
-        #endif
+            setupPtyChild();
         } );
+#endif
     }
 
     void emitReadyRead()
@@ -87,6 +46,62 @@ public:
     }
 
 private:
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    void setupChildProcess() override
+    {
+        setupPtyChild();
+    }
+#endif
+
+    void setupPtyChild()
+    {
+        dup2(m_handleSlave, STDIN_FILENO);
+        dup2(m_handleSlave, STDOUT_FILENO);
+        dup2(m_handleSlave, STDERR_FILENO);
+
+        pid_t sid = setsid();
+        ioctl(m_handleSlave, TIOCSCTTY, 0);
+        tcsetpgrp(m_handleSlave, sid);
+
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_FREEBSD)
+        // on Android impossible to put record to the 'utmp' file
+        struct utmpx utmpxInfo;
+        memset(&utmpxInfo, 0, sizeof(utmpxInfo));
+
+        const QByteArray user = qgetenv("USER");
+        strncpy(utmpxInfo.ut_user, user.constData(), sizeof(utmpxInfo.ut_user));
+
+        QString device(m_handleSlaveName);
+        if (device.startsWith("/dev/"))
+            device = device.mid(5);
+
+        QByteArray ba = device.toLatin1();
+        const char *d = ba.constData();
+
+        strncpy(utmpxInfo.ut_line, d, sizeof(utmpxInfo.ut_line));
+
+        strncpy(utmpxInfo.ut_id, d + strlen(d) - sizeof(utmpxInfo.ut_id), sizeof(utmpxInfo.ut_id));
+
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        utmpxInfo.ut_tv.tv_sec = tv.tv_sec;
+        utmpxInfo.ut_tv.tv_usec = tv.tv_usec;
+
+        utmpxInfo.ut_type = USER_PROCESS;
+        utmpxInfo.ut_pid = getpid();
+
+        utmpxname(_PATH_UTMPX);
+        setutxent();
+        pututxline(&utmpxInfo);
+        endutxent();
+
+#if !defined(Q_OS_UNIX)
+        updwtmpx(_PATH_UTMPX, &loginInfo);
+#endif
+
+#endif
+    }
+
     int m_handleMaster, m_handleSlave;
     QString m_handleSlaveName;
 };

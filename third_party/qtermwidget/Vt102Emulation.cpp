@@ -36,7 +36,7 @@
 
 Vt102Emulation::Vt102Emulation()
         : Emulation(), prevCC(0), _titleUpdateTimer(new QTimer(this)),
-            _reportFocusEvents(false), _toUtf8(QStringEncoder::Utf8),
+            _reportFocusEvents(false),
             _isTitleChanged(false) {
     _titleUpdateTimer->setSingleShot(true);
     QObject::connect(_titleUpdateTimer, &QTimer::timeout, this, &Vt102Emulation::updateTitle);

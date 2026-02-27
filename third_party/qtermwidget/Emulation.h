@@ -25,11 +25,10 @@
 #include <cstdio>
 
 #include <QKeyEvent>
-#include <QStringDecoder>
 #include <QTextStream>
 #include <QTimer>
-#include <QStringEncoder>
 
+#include "QtCompatCodec.h"
 #include "KeyboardTranslator.h"
 
 class HistoryType;

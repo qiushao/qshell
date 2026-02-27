@@ -13,10 +13,10 @@ This guide explains how to build and package qshell for macOS distribution.
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
-4. **Qt6**
+4. **Qt5**
    ```bash
-   brew install cmake qt6
-   export Qt6_DIR=$(brew --prefix qt6)
+   brew install cmake qt@5
+   export Qt5_DIR=$(brew --prefix qt@5)
    ```
 
 ## Quick Start
@@ -138,13 +138,13 @@ xcrun stapler staple build/qshell-*.dmg
 
 ## Troubleshooting
 
-### Qt6 not found
+### Qt5 not found
 ```bash
-# Set Qt6_DIR explicitly
-export Qt6_DIR=/path/to/qt6
+# Set Qt5_DIR explicitly
+export Qt5_DIR=/path/to/qt5
 # Common locations:
-# - /usr/local/opt/qt6 (Intel Mac, Homebrew)
-# - /opt/homebrew/opt/qt (Apple Silicon, Homebrew)
+# - /usr/local/opt/qt@5 (Intel Mac, Homebrew)
+# - /opt/homebrew/opt/qt@5 (Apple Silicon, Homebrew)
 ```
 
 ### Icon conversion fails

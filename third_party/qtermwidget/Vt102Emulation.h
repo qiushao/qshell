@@ -199,7 +199,6 @@ private:
   QTimer* _titleUpdateTimer;
 
   bool _reportFocusEvents;
-  QStringEncoder _toUtf8;
 
   bool _isTitleChanged; ///< flag if the title/icon was changed by user
   QString _userTitle;

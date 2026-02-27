@@ -387,7 +387,11 @@ bool KeyboardTranslatorReader::parseAsStateFlag(const QString &item, KeyboardTra
 bool KeyboardTranslatorReader::parseAsKeyCode(const QString &item, int &keyCode) {
     QKeySequence sequence = QKeySequence::fromString(item);
     if (!sequence.isEmpty()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         keyCode = sequence[0].toCombined();
+#else
+        keyCode = sequence[0];
+#endif
 
         if (sequence.count() > 1) {
             qDebug() << "Unhandled key codes in sequence: " << item;
@@ -604,7 +608,7 @@ QByteArray KeyboardTranslator::Entry::escapedText(bool expandWildCards,
         if (replacement == 'x') {
             QByteArray escaped("\\x");
             escaped += QByteArray(1, ch).toHex();
-            result.replace(i, 1, QByteArrayView(escaped));
+            result.replace(i, 1, escaped);
         } else if (replacement != 0) {
             result.remove(i, 1);
             result.insert(i, '\\');

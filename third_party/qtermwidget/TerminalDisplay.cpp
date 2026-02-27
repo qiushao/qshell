@@ -60,6 +60,24 @@
     "abcdefgjijklmnopqrstuvwxyz"                                                 \
     "0123456789./+@"
 
+namespace {
+QPoint mouseEventPos(const QMouseEvent *event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+
+QPoint wheelEventPos(const QWheelEvent *event) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+} // namespace
+
 const ColorEntry base_color_table[TABLE_COLORS] =
 // The following are almost IBM standard color codes, with some slight
 // gamma correction for the dim colors to compensate for bright X screens.
@@ -1492,13 +1510,24 @@ void TerminalDisplay::focusInEvent(QFocusEvent *) {
     emit termGetFocus();
 }
 
-void TerminalDisplay::enterEvent(QEnterEvent* event)
+void TerminalDisplay::enterEvent(
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QEnterEvent* event
+#else
+    QEvent* event
+#endif
+)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  const QPoint localPos = event->position().toPoint();
+#else
+  const QPoint localPos = mapFromGlobal(QCursor::pos());
+#endif
   if (gs_deadSpot.x() < 0 && _hideMouseTimer
       // NOTE: scrollBar->underMouse() doesn't work here
-      && !_scrollBar->rect().contains(_scrollBar->mapFromParent(event->position().toPoint())))
+      && !_scrollBar->rect().contains(_scrollBar->mapFromParent(localPos)))
   {
-    gs_futureDeadSpot = event->position().toPoint();
+    gs_futureDeadSpot = localPos;
     _hideMouseTimer->start(_mouseAutohideDelay);
   }
   QWidget::enterEvent(event);
@@ -2342,7 +2371,7 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent *ev) {
             gs_deadSpot = QPoint(-1,-1);
             QApplication::restoreOverrideCursor();
         }
-        gs_futureDeadSpot = ev->position().toPoint();
+        gs_futureDeadSpot = mouseEventPos(ev);
         Q_ASSERT(_hideMouseTimer);
         _hideMouseTimer->start(_mouseAutohideDelay);
     }
@@ -2356,7 +2385,7 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent *ev) {
                             ? _scrollBar->width()
                             : 0);
 
-    getCharacterPosition(ev->position().toPoint(), charLine, charColumn);
+    getCharacterPosition(mouseEventPos(ev), charLine, charColumn);
 
     // handle filters
     // change link hot-spot appearance on mouse-over
@@ -2446,10 +2475,11 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent *ev) {
 
         //   int distance = KGlobalSettings::dndEventDelay();
         int distance = QApplication::startDragDistance();
-        if (ev->position().x() > dragInfo.start.x() + distance ||
-                ev->position().x() < dragInfo.start.x() - distance ||
-                ev->position().y() > dragInfo.start.y() + distance ||
-                ev->position().y() < dragInfo.start.y() - distance) {
+        const QPoint currentPos = mouseEventPos(ev);
+        if (currentPos.x() > dragInfo.start.x() + distance ||
+                currentPos.x() < dragInfo.start.x() - distance ||
+                currentPos.y() > dragInfo.start.y() + distance ||
+                currentPos.y() < dragInfo.start.y() - distance) {
             // we've left the drag square, we can start a real drag operation now
             emit isBusySelecting(false); // Ok.. we can breath again.
 
@@ -2470,7 +2500,7 @@ void TerminalDisplay::mouseMoveEvent(QMouseEvent *ev) {
     if (ev->buttons() & Qt::MiddleButton)
         return;
 
-    extendSelection(ev->position().toPoint());
+    extendSelection(mouseEventPos(ev));
 }
 
 void TerminalDisplay::extendSelection(const QPoint &position) {
@@ -2893,7 +2923,7 @@ void TerminalDisplay::wheelEvent(QWheelEvent *ev) {
         // terminal program wants notification of mouse activity
         int charLine;
         int charColumn;
-        getCharacterPosition(ev->position(), charLine, charColumn);
+        getCharacterPosition(wheelEventPos(ev), charLine, charColumn);
 
         emit mouseSignal(ev->angleDelta().y() > 0 ? 4 : 5, charColumn + 1,
                         charLine + 1 + _scrollBar->value() - _scrollBar->maximum(), 0);
@@ -3602,7 +3632,13 @@ bool AutoScrollHandler::eventFilter(QObject *watched, QEvent *event) {
 
 ScrollBar::ScrollBar(QWidget* parent) : QScrollBar(parent) {}
 
-void ScrollBar::enterEvent(QEnterEvent* event)
+void ScrollBar::enterEvent(
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QEnterEvent* event
+#else
+    QEvent* event
+#endif
+)
 {
   // show the mouse cursor that was auto-hidden
   if (gs_deadSpot.x() > -1)

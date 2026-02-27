@@ -31,20 +31,20 @@ if ! command -v make &> /dev/null; then
     exit 1
 fi
 
-# Check for Qt6
-if [ -z "$Qt6_DIR" ]; then
-    echo "Warning: Qt6_DIR environment variable not set"
-    echo "Trying to find Qt6 automatically..."
+# Check for Qt5
+if [ -z "$Qt5_DIR" ]; then
+    echo "Warning: Qt5_DIR environment variable not set"
+    echo "Trying to find Qt5 automatically..."
     # Try common locations
-    if [ -d "/usr/local/opt/qt6" ]; then
-        export Qt6_DIR="/usr/local/opt/qt6"
-        echo "Found Qt6 at: $Qt6_DIR"
-    elif [ -d "/opt/homebrew/opt/qt" ]; then
-        export Qt6_DIR="/opt/homebrew/opt/qt"
-        echo "Found Qt6 at: $Qt6_DIR"
+    if [ -d "/usr/local/opt/qt@5" ]; then
+        export Qt5_DIR="/usr/local/opt/qt@5"
+        echo "Found Qt5 at: $Qt5_DIR"
+    elif [ -d "/opt/homebrew/opt/qt@5" ]; then
+        export Qt5_DIR="/opt/homebrew/opt/qt@5"
+        echo "Found Qt5 at: $Qt5_DIR"
     else
-        echo "Error: Qt6 not found. Please set Qt6_DIR environment variable"
-        echo "Example: export Qt6_DIR=/path/to/Qt6"
+        echo "Error: Qt5 not found. Please set Qt5_DIR environment variable"
+        echo "Example: export Qt5_DIR=/path/to/Qt5"
         exit 1
     fi
 fi

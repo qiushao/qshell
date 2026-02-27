@@ -45,10 +45,10 @@ else ()
 endif ()
 
 target_link_libraries(qshell
-        Qt::Core
-        Qt::Gui
-        Qt::Widgets
-        Qt::SerialPort
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::SerialPort
         qtermwidget
         ptyqt
         lua_static
@@ -58,7 +58,7 @@ target_link_libraries(qshell
 target_compile_definitions(qshell PRIVATE APP_VERSION="${APP_VERSION}")
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "$ENV{Qt6_DIR}/bin")
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "$ENV{Qt5_DIR}/bin")
     # 编译后执行 windeployqt
     add_custom_command(TARGET qshell POST_BUILD
             COMMAND "${WINDEPLOYQT_EXECUTABLE}"
@@ -110,7 +110,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
     # 自动检测 + 手动补充
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
-            "libqt6core6, libqt6gui6, libqt6widgets6, libqt6serialport6"
+            "libqt5core5a, libqt5gui5, libqt5widgets5, libqt5serialport5"
     )
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 

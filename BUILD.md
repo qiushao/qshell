@@ -3,7 +3,7 @@
 # linux (ubuntu22)
 ## install dependencies
 ```shell
-sudo apt install git cmake build-essential qt6-base-dev libqt6serialport6-dev clang-tidy 
+sudo apt install git cmake build-essential qtbase5-dev libqt5serialport5-dev clang-tidy 
 ```
 
 ## checkout source
@@ -20,7 +20,7 @@ sudo cmake --install build
 
 # windows
 ## 环境配置
-windows 开发 qt 环境配置比较复杂，我们采用的是 msvc2022 + qt6 online installer
+windows 开发 qt 环境配置比较复杂，我们采用的是 msvc2022 + qt5 online installer
 
 ## build & package
 在仓库根目录打开 powershell，执行 windows 的编译脚本即可
@@ -31,8 +31,8 @@ windows 开发 qt 环境配置比较复杂，我们采用的是 msvc2022 + qt6 o
 # macos
 ## install dependencies
 ```shell
-brew install cmake qt6
-export Qt6_DIR=$(brew --prefix qt6)
+brew install cmake qt@5
+export Qt5_DIR=$(brew --prefix qt@5)
 ```
 
 ## build & package

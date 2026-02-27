@@ -14,6 +14,7 @@
 #include <QMessageBox>
 #include <QLabel>
 #include <QDialogButtonBox>
+#include <QDebug>
 
 CommandWindow::CommandWindow(QWidget *parent)
     : QWidget(parent) {
@@ -74,7 +75,11 @@ void CommandWindow::loadHistory() {
     QFile file(historyFilePath_);
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         in.setEncoding(QStringConverter::Utf8);
+#else
+        in.setCodec("UTF-8");
+#endif
         while (!in.atEnd()) {
             QString line = in.readLine();
             if (!line.isEmpty()) {
@@ -97,7 +102,11 @@ void CommandWindow::saveHistory() {
     QFile file(historyFilePath_);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&file);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         out.setEncoding(QStringConverter::Utf8);
+#else
+        out.setCodec("UTF-8");
+#endif
         for (const QString &cmd : history_) {
             out << cmd << "\n";
         }
@@ -160,7 +169,7 @@ void CommandWindow::navigateHistory(int direction) {
         // 恢复用户原来的输入
         commandEditor_->setPlainText(currentInput_);
     } else {
-        commandEditor_->setPlainText(history_[historyIndex_]);
+        commandEditor_->setPlainText(history_[static_cast<int>(historyIndex_)]);
     }
 
     // 将光标移到末尾

@@ -361,7 +361,11 @@ void SessionTreeWidget::dragMoveEvent(QDragMoveEvent *event) {
         return;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QTreeWidgetItem *dropTarget = itemAt(event->position().toPoint());
+#else
+    QTreeWidgetItem *dropTarget = itemAt(event->pos());
+#endif
 
     if (canDropOn(dragItem, dropTarget)) {
         event->acceptProposedAction();
@@ -404,7 +408,11 @@ void SessionTreeWidget::dropEvent(QDropEvent *event) {
         return;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QTreeWidgetItem *dropTarget = itemAt(event->position().toPoint());
+#else
+    QTreeWidgetItem *dropTarget = itemAt(event->pos());
+#endif
 
     if (!canDropOn(dragItem, dropTarget)) {
         event->ignore();

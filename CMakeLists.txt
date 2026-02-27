@@ -5,8 +5,8 @@ message("CMAKE_SYSTEM_NAME = ${CMAKE_SYSTEM_NAME}")
 message("CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
-    message(STATUS "Qt6_DIR=$ENV{Qt6_DIR}")
-    list(PREPEND CMAKE_PREFIX_PATH "$ENV{Qt6_DIR}")
+    message(STATUS "Qt5_DIR=$ENV{Qt5_DIR}")
+    list(PREPEND CMAKE_PREFIX_PATH "$ENV{Qt5_DIR}")
     message(STATUS "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
 endif ()
 
@@ -19,7 +19,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS
+find_package(Qt5 COMPONENTS
         Core
         Gui
         Widgets

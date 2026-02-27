@@ -46,7 +46,7 @@ add_library(qtermwidget
 )
 
 target_link_libraries(qtermwidget PUBLIC
-        Qt6::Core Qt6::Widgets Qt6::Network utf8proc
+        Qt5::Core Qt5::Widgets Qt5::Network utf8proc
 )
 
 set(EXPORT_HEADERS util ${CMAKE_CURRENT_SOURCE_DIR})

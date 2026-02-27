@@ -282,9 +282,15 @@ void RegExpFilter::process() {
     // ignore any regular expressions which match an empty string.
     // otherwise the while loop below will run indefinitely
     static const QString emptyString;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     auto match =
         _searchText.match(emptyString, 0, QRegularExpression::NormalMatch,
                             QRegularExpression::AnchorAtOffsetMatchOption);
+#else
+    auto match =
+        _searchText.match(emptyString, 0, QRegularExpression::NormalMatch,
+                            QRegularExpression::AnchoredMatchOption);
+#endif
     if (match.hasMatch())
         return;
 

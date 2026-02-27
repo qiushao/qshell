@@ -21,7 +21,7 @@ add_library(ptyqt
 )
 
 target_link_libraries(ptyqt PUBLIC
-        Qt6::Core Qt6::Network utf8proc
+        Qt5::Core Qt5::Network utf8proc
 )
 
 set(EXPORT_HEADERS ${CMAKE_CURRENT_SOURCE_DIR})
