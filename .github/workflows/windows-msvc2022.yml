@@ -28,7 +28,6 @@ jobs:
         with:
           arch: 'win64_msvc2019_64'
           version: '5.15.2'
-          modules: 'qtserialport'
           aqtversion: '==3.1.7'
 
       - name: Install cmake

@@ -26,7 +26,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '5.15.2'
-          modules: 'qtserialport'
           aqtversion: '==3.1.20'
 
       - name: Install prerequisites
