@@ -2,6 +2,8 @@ name: windows-msvc2022
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'V**'
     paths-ignore:

@@ -2,6 +2,8 @@ name: macos
 
 on:
   push:
+    branches:
+      - '**'
     paths-ignore:
       - 'docs/**'
       - 'README.md'
