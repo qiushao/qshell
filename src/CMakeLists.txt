@@ -30,7 +30,15 @@ set(SRC_FILES main.cpp
 if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set(SRC_FILES ${SRC_FILES} ui/terminal/SSHTerminalLinux.cpp)
 elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
-    set(SRC_FILES ${SRC_FILES} ui/terminal/SSHTerminalWindows.cpp)
+    enable_language(RC)
+    configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/qshell.rc.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/qshell.rc"
+            @ONLY
+    )
+    set(SRC_FILES ${SRC_FILES}
+            ui/terminal/SSHTerminalWindows.cpp
+            "${CMAKE_CURRENT_BINARY_DIR}/qshell.rc")
 else ()
     message(FATAL_ERROR "${CMAKE_SYSTEM_NAME} not supported")
 endif ()
