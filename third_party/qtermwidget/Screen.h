@@ -353,7 +353,7 @@ public:
      * is inserted at the current cursor position, otherwise it will replace the
      * character already at the current cursor position.
      */
-    void displayCharacter(wchar_t c);
+    void displayCharacter(uint c);
 
     // Do composition with last shown character FIXME: Not implemented yet for KDE 4
     void compose(const QString& compose);
@@ -699,7 +699,7 @@ private:
     int lastPos;
 
     // used in REP (repeating char)
-    unsigned short lastDrawnChar;
+    uint lastDrawnChar;
 
     static Character defaultChar;
 };

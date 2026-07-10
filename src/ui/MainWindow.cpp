@@ -948,11 +948,11 @@ bool MainWindow::openSessionById(const QString &sessionId) {
         return false;
     }
 
-    terminal->connect();
     QObject::connect(terminal, &BaseTerminal::onSessionError, this, &MainWindow::onSessionError);
     tabWidget_->addTab(terminal, *connectStateIcon_, session.name);
     tabWidget_->setCurrentWidget(terminal);
     terminal->setFocus();
+    terminal->connect();
     qDebug() << "onOpenSession" << session.name;
     return true;
 }

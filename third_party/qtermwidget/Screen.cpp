@@ -552,7 +552,7 @@ void Screen::backspace() {
         screenLines[cuY].resize(cuX + 1);
 #if 0 // TODO: implement when unicode_width is fixed, we need more
     // backspace/cursorMove
-    wchar_t c = 0;
+    uint c = 0;
     if(cuX <= 0) {
         if(cuY > 0) {
             uint32_t endx = screenLines[cuY-1].size();
@@ -637,7 +637,7 @@ void Screen::checkSelection(int from, int to) {
         clearSelection();
 }
 
-void Screen::displayCharacter(wchar_t c) {
+void Screen::displayCharacter(uint c) {
     // Note that VT100 does wrapping BEFORE putting the character.
     // This has impact on the assumption of valid cursor positions.
     // We indicate the fact that a newline has to be triggered by

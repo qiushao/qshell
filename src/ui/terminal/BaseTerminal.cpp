@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QColorDialog>
 #include <QRandomGenerator>
+#include <QTimer>
 
 BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     connect_ = false;
@@ -111,6 +112,15 @@ void BaseTerminal::startLocalShell() {
     }
 
     connect_ = true;
+
+    auto syncPtySize = [this]() {
+        if (localShell_) {
+            localShell_->resize(static_cast<qint16>(screenColumnsCount()),
+                                static_cast<qint16>(screenLinesCount()));
+        }
+    };
+    QTimer::singleShot(0, this, syncPtySize);
+    QTimer::singleShot(100, this, syncPtySize);
 }
 
 bool BaseTerminal::isConnect() const {

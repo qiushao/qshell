@@ -99,6 +99,37 @@ bool TerminalDisplay::_antialiasText = true;
 // more information can be found in: http://unicode.org/reports/tr9/
 const QChar LTR_OVERRIDE_CHAR(0x202D);
 
+namespace {
+void appendCodePoint(QString &text, uint codePoint) {
+    if (codePoint <= 0xffff) {
+        text.append(QChar(static_cast<ushort>(codePoint)));
+    } else if (codePoint <= 0x10ffff) {
+        codePoint -= 0x10000;
+        text.append(QChar(static_cast<ushort>(0xd800 + (codePoint >> 10))));
+        text.append(QChar(static_cast<ushort>(0xdc00 + (codePoint & 0x3ff))));
+    }
+}
+
+QString codePointToString(uint codePoint) {
+    QString text;
+    appendCodePoint(text, codePoint);
+    return text;
+}
+
+QString codePointsToString(const QVector<uint> &codePoints) {
+    QString text;
+    text.reserve(codePoints.size());
+    for (uint codePoint : codePoints) {
+        appendCodePoint(text, codePoint);
+    }
+    return text;
+}
+
+bool isLineCharCodePoint(uint codePoint) {
+    return (codePoint & 0xFF80U) == 0x2500U;
+}
+}
+
 /* ------------------------------------------------------------------------- */
 /*                                                                           */
 /*                                Colors                                     */
@@ -207,7 +238,7 @@ bool TerminalDisplay::isLineChar(Character c) const {
     return _drawLineChars && c.isLineChar();
 }
 
-bool TerminalDisplay::isLineCharString(const std::wstring& string) const {
+bool TerminalDisplay::isLineCharString(const QVector<uint>& string) const {
     return string.length() > 0 && _drawLineChars && (string[0] & 0xFF80) == 0x2500;
 }
 
@@ -650,7 +681,7 @@ static void drawOtherChar(QPainter &paint, int x, int y, int w, int h, uchar cod
 }
 
 void TerminalDisplay::drawLineCharString(QPainter &painter, int x, int y,
-                                         const std::wstring &str,
+                                         const QVector<uint> &str,
                                          const Character *attributes) const {
     const QPen &currentPen = painter.pen();
 
@@ -664,13 +695,13 @@ void TerminalDisplay::drawLineCharString(QPainter &painter, int x, int y,
     Q_UNUSED(attributes);
 #endif
 
-    for (size_t i = 0; i < str.length(); i++) {
+    for (int i = 0; i < str.length(); i++) {
         uint8_t code = static_cast<uint8_t>(str[i] & 0xffU);
         if (LineChars[code])
-            drawLineChar(painter, static_cast<int>(x + (_fontWidth * i)), y, _fontWidth, _fontHeight,
+            drawLineChar(painter, x + (_fontWidth * i), y, _fontWidth, _fontHeight,
                                      code);
         else
-            drawOtherChar(painter, static_cast<int>(x + (_fontWidth * i)), y, _fontWidth, _fontHeight,
+            drawOtherChar(painter, x + (_fontWidth * i), y, _fontWidth, _fontHeight,
                                         code);
     }
 
@@ -678,7 +709,7 @@ void TerminalDisplay::drawLineCharString(QPainter &painter, int x, int y,
 }
 
 void TerminalDisplay::drawLineCharString(QPainter &painter, int x, int y,
-                                         wchar_t ch,
+                                         uint ch,
                                          const Character *attributes) const {
     const QPen &currentPen = painter.pen();
 
@@ -827,7 +858,7 @@ void TerminalDisplay::drawCursor(QPainter &painter, const QRect &rect,
 }
 
 void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
-                                     const std::wstring &text,
+                                     const QVector<uint> &text,
                                      const Character *style,
                                      bool invertCharacterColor,
                                      bool tooWide) {
@@ -879,12 +910,12 @@ void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
     //        this issue.
     int font_width = _charWidth->string_font_width(text);
     int width = CharWidth::string_unicode_width(text);
-    if (_fix_quardCRT_issue33 && font_width != width) {
+    if (_fix_quardCRT_issue33 && width > 0 && font_width != width) {
         int single_rect_width = rect.width() / width;
-        for (size_t i = 0; i < text.length(); i++) {
-            wchar_t line_char = text[i];
-            if (isLineChar(line_char)) {
-                drawLineCharString(painter, static_cast<int>(rect.x() + single_rect_width * i), rect.y(),
+        for (int i = 0; i < text.length(); i++) {
+            uint line_char = text[i];
+            if (isLineCharCodePoint(line_char)) {
+                drawLineCharString(painter, rect.x() + single_rect_width * i, rect.y(),
                                                      line_char, style);
             } else {
                 if (_charWidth->font_width(line_char) !=
@@ -904,12 +935,12 @@ void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
                                 single_rect_width * (_charWidth->font_width(line_char) -
                                                                          CharWidth::unicode_width(line_char));
                         painter.save();
-                        QRect rightHalfRect(static_cast<int>(rect.x() + single_rect_width * i), rect.y(),
+                        QRect rightHalfRect(rect.x() + single_rect_width * i, rect.y(),
                                                                 single_rect_width, _fontHeight);
                         painter.setClipRect(rightHalfRect);
-                        painter.drawText(static_cast<int>(rect.x() + single_rect_width * i - offset),
+                        painter.drawText(rect.x() + single_rect_width * i - offset,
                                                          rect.y() + _fontAscent + _lineSpacing,
-                                                         QString::fromWCharArray(&line_char, 1));
+                                                         codePointToString(line_char));
                         painter.restore();
                     } else if (center_chars.contains(line_char)) {
                         int offset = single_rect_width *
@@ -917,27 +948,27 @@ void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
                                                     CharWidth::unicode_width(line_char)) /
                                                  2;
                         painter.save();
-                        QRect rightHalfRect(static_cast<int>(rect.x() + single_rect_width * i), rect.y(),
+                        QRect rightHalfRect(rect.x() + single_rect_width * i, rect.y(),
                                                                 single_rect_width, _fontHeight);
                         painter.setClipRect(rightHalfRect);
-                        painter.drawText(static_cast<int>(rect.x() + single_rect_width * i - offset),
+                        painter.drawText(rect.x() + single_rect_width * i - offset,
                                                          rect.y() + _fontAscent + _lineSpacing,
-                                                         QString::fromWCharArray(&line_char, 1));
+                                                         codePointToString(line_char));
                         painter.restore();
                     } else if (left_chars.contains(line_char)) {
-                        QRect rectangle(static_cast<int>(rect.x() + single_rect_width * i), rect.y(),
+                        QRect rectangle(rect.x() + single_rect_width * i, rect.y(),
                                                         single_rect_width, _fontHeight);
                         painter.drawText(rectangle, 0,
-                                                         QString::fromWCharArray(&line_char, 1));
+                                                         codePointToString(line_char));
                     } else {
-                        painter.drawText(static_cast<int>(rect.x() + single_rect_width * i),
+                        painter.drawText(rect.x() + single_rect_width * i,
                                                          rect.y() + _fontAscent + _lineSpacing,
-                                                         QString::fromWCharArray(&line_char, 1));
+                                                         codePointToString(line_char));
                     }
                 } else {
-                    painter.drawText(static_cast<int>(rect.x() + single_rect_width * i),
+                    painter.drawText(rect.x() + single_rect_width * i,
                                                      rect.y() + _fontAscent + _lineSpacing,
-                                                     QString::fromWCharArray(&line_char, 1));
+                                                     codePointToString(line_char));
                 }
             }
         }
@@ -956,22 +987,22 @@ void TerminalDisplay::drawCharacters(QPainter &painter, const QRect &rect,
                 if (tooWide) {
                     QRect drawRect(rect.topLeft(), rect.size());
                     drawRect.setHeight(rect.height() + _drawTextAdditionHeight);
-                    painter.drawText(drawRect, Qt::AlignBottom, QString::fromStdWString(text));
+                    painter.drawText(drawRect, Qt::AlignBottom, codePointsToString(text));
                 } else {
                     painter.drawText(rect.x(), rect.y() + _fontAscent + _lineSpacing,
-                                    QString::fromStdWString(text));
+                                    codePointsToString(text));
                 }
             } else {
                 QRect drawRect(rect.topLeft(), rect.size());
                 drawRect.setHeight(rect.height() + _drawTextAdditionHeight);
-                painter.drawText(drawRect, Qt::AlignBottom, LTR_OVERRIDE_CHAR + QString::fromStdWString(text));
+                painter.drawText(drawRect, Qt::AlignBottom, LTR_OVERRIDE_CHAR + codePointsToString(text));
             }
         }
     }
 }
 
 void TerminalDisplay::drawTextFragment(QPainter &painter, const QRect &rect,
-                                       const std::wstring &text,
+                                       const QVector<uint> &text,
                                        Character* style,
                                        bool tooWide,
                                        bool isSelection) {
@@ -1244,7 +1275,6 @@ void TerminalDisplay::updateImage() {
     const int linesToUpdate = qMin(this->_lines, qMax(0, lines));
     const int columnsToUpdate = qMin(this->_columns, qMax(0, columns));
 
-    wchar_t *disstrU = new wchar_t[columnsToUpdate];
     char *dirtyMask = new char[columnsToUpdate + 2];
     QRegion dirtyRegion;
 
@@ -1279,16 +1309,14 @@ void TerminalDisplay::updateImage() {
                 // We also take the next one into account to handle the situation
                 // where characters exceed their cell width.
                 if (dirtyMask[x]) {
-                    wchar_t c = newLine[x + 0].character;
+                    uint c = newLine[x + 0].character;
                     if (!c)
                         continue;
-                    int p = 0;
-                    disstrU[p++] = c; // fontMap(c);
                     bool lineDraw = isLineChar(newLine[x+0]);
                     bool doubleWidth = (x + 1 == columnsToUpdate)
                                                                  ? false
                                                                  : (newLine[x + 1].character == 0);
-                    int charWidth = fm.horizontalAdvance(QString::fromWCharArray(&c, 1));
+                    int charWidth = fm.horizontalAdvance(codePointToString(c));
                     bool bigWidth = _fixedFont && !doubleWidth && charWidth > _fontWidth;
                     bool smallWidth = _fixedFont && charWidth < _fontWidth;
                     cr = newLine[x].rendition;
@@ -1307,7 +1335,7 @@ void TerminalDisplay::updateImage() {
                                         ? false
                                         : (newLine[x + len + 1].character == 0);
 
-                        int nxtCharWidth = fm.horizontalAdvance(QString::fromWCharArray(&newLine[x+len].character, 1));
+                        int nxtCharWidth = fm.horizontalAdvance(codePointToString(newLine[x+len].character));
                         bool nextIsbigWidth = _fixedFont && !nextIsDoubleWidth && nxtCharWidth > _fontWidth;
                         bool nextIsSmallWidth = _fixedFont && newLine[x+len].character && nxtCharWidth < _fontWidth;
 
@@ -1321,11 +1349,7 @@ void TerminalDisplay::updateImage() {
                             smallWidth || nextIsSmallWidth) {
                             break;
                         }
-
-                        disstrU[p++] = c; // fontMap(c);
                     }
-
-                    std::wstring unistr(disstrU, p);
 
                     bool saveFixedFont = _fixedFont;
                     if (lineDraw)
@@ -1397,7 +1421,6 @@ void TerminalDisplay::updateImage() {
         _blinking = false;
     }
     delete[] dirtyMask;
-    delete[] disstrU;
 }
 
 void TerminalDisplay::showResizeNotification() {
@@ -1747,10 +1770,7 @@ void TerminalDisplay::paintFilters(QPainter &painter) {
             do {
                 if (endColumn <= 0)
                     break;
-                uint64_t ucode = _image[loc(startColumn, line)].character;
-                if (ucode > 0xffff)
-                    break;
-                if (QChar(_image[loc(startColumn, line)].character).isSpace())
+                if (_image[loc(startColumn, line)].isSpace())
                     break;
                 endColumn--;
             } while (true);
@@ -1815,7 +1835,7 @@ int TerminalDisplay::textWidth(const int startColumn, const int length, const in
             // c == 0 may happen here after a double-column character
             result += fm.horizontalAdvance(QLatin1Char(REPCHAR[0]));
         } else {
-            result += fm.horizontalAdvance(QChar(static_cast<uint>(c.character)));
+            result += fm.horizontalAdvance(codePointToString(c.character));
         }
     }
     return result;
@@ -1845,7 +1865,7 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
 
     QFontMetrics fm(font());
     const int numberOfColumns = _usedColumns;
-    std::wstring unistr;
+    QVector<uint> unistr;
     unistr.reserve(numberOfColumns);
     for (int y = luy; y <= rly; y++) {
         quint32 c = _image[loc(lux, y)].character;
@@ -1854,40 +1874,32 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
             x--; // Search for start of multi-column character
         for (; x <= rlx; x++) {
             int len = 1;
-            int p = 0;
-
-            // reset our buffer to the number of columns
-            int bufferSize = numberOfColumns;
-            unistr.resize(bufferSize);
+            unistr.clear();
 
             // is this a single character or a sequence of characters ?
             if (_image[loc(x, y)].rendition & RE_EXTENDED_CHAR) {
                 // sequence of characters
                 ushort extendedCharLength = 0;
-                uint* chars = ExtendedCharTable::instance
+                const uint* chars = ExtendedCharTable::instance
                                 .lookupExtendedChar(_image[loc(x,y)].character,extendedCharLength);
                 if (chars) {
                     Q_ASSERT(extendedCharLength > 1);
-                    bufferSize += extendedCharLength - 1;
-                    unistr.resize(bufferSize);
                     for ( int index = 0 ; index < extendedCharLength ; index++ ) {
-                        Q_ASSERT( p < bufferSize );
-                        unistr[p++] = chars[index];
+                        unistr.append(chars[index]);
                     }
                 }
             } else {
                 // single character
                 c = _image[loc(x, y)].character;
                 if (c) {
-                    Q_ASSERT(p < bufferSize);
-                    unistr[p++] = c; // fontMap(c);
+                    unistr.append(c); // fontMap(c);
                 }
             }
 
             bool lineDraw = isLineChar(_image[loc(x,y)]);
             bool doubleWidth =
                     (_image[qMin(loc(x, y) + 1, _imageSize)].character == 0);
-            int charWidth = fm.horizontalAdvance(QString::fromWCharArray((wchar_t *)&c, 1));
+            int charWidth = fm.horizontalAdvance(codePointToString(c));
             bool bigWidth = _fixedFont && !doubleWidth && charWidth > _fontWidth;
             bool tooWide = bigWidth && charWidth >= 2 * _fontWidth;
             bool smallWidth = _fixedFont && c && charWidth < _fontWidth;
@@ -1904,7 +1916,7 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
                         _image[loc(x + len, y)].rendition == currentRendition &&
                         (nxtDoubleWidth = (_image[qMin(loc(x+len,y)+1,_imageSize)].character == 0)) == doubleWidth &&
                         !smallWidth &&
-                        !(_fixedFont && (nxtC = _image[loc(x+len,y)].character) && (nxtCharWidth = fm.horizontalAdvance(QString::fromWCharArray((const wchar_t *)(&nxtC), 1))) < _fontWidth) &&
+                        !(_fixedFont && (nxtC = _image[loc(x+len,y)].character) && (nxtCharWidth = fm.horizontalAdvance(codePointToString(nxtC))) < _fontWidth) &&
                         !bigWidth &&
                         !(_fixedFont && !nxtDoubleWidth && nxtC && nxtCharWidth > _fontWidth) &&
                         isLineChar(_image[loc(x+len,y)]) == lineDraw) // Assignment!
@@ -1916,18 +1928,14 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
                     const uint* chars = ExtendedCharTable::instance.lookupExtendedChar(c, extendedCharLength);
                     if (chars) {
                         Q_ASSERT(extendedCharLength > 1);
-                        bufferSize += extendedCharLength - 1;
-                        unistr.resize(bufferSize);
                         for ( int index = 0 ; index < extendedCharLength ; index++ ) {
-                            Q_ASSERT( p < bufferSize );
-                            unistr[p++] = chars[index];
+                            unistr.append(chars[index]);
                         }
                     }
                 } else {
                     // single character
                     if (c) {
-                        Q_ASSERT( p < bufferSize );
-                        unistr[p++] = c; //fontMap(c);
+                        unistr.append(c); //fontMap(c);
                     }
                 }
                 if (doubleWidth) // assert((_image[loc(x+len,y)+1].character == 0)), see
@@ -1941,7 +1949,6 @@ void TerminalDisplay::drawContents(QPainter &paint, const QRect &rect) {
             bool save__fixedFont = _fixedFont;
             if (lineDraw)
                 _fixedFont = false;
-            unistr.resize(p);
 
             // Create a text scaling matrix for double width and double height lines.
             QTransform textScale;
@@ -2845,7 +2852,7 @@ void TerminalDisplay::mouseDoubleClickEvent(QMouseEvent *ev) {
         endSel.setX(x);
 
         // In word selection mode don't select @ (64) if at end of word.
-        if (QChar(_image[i].character) == QLatin1Char('@') &&
+        if (_image[i].character == '@' &&
             endSel.x() - bgnSel.x() > 0 &&
             (_image[i].rendition & RE_EXTENDED_CHAR) == 0) {
             endSel.setX( x - 1 );
@@ -2970,11 +2977,12 @@ QChar TerminalDisplay::charClass(const Character &ch) const {
         ushort extendedCharLength = 0;
         const uint* chars = ExtendedCharTable::instance.lookupExtendedChar(ch.character, extendedCharLength);
         if (chars && extendedCharLength > 0) {
-            std::wstring str;
+            QVector<uint> str;
+            str.reserve(extendedCharLength);
             for (ushort nchar = 0; nchar < extendedCharLength; nchar++) {
                 str.push_back(chars[nchar]);
             }
-            const QString s = QString::fromStdWString(str);
+            const QString s = codePointsToString(str);
             if (_wordCharacters.contains(s, Qt::CaseInsensitive))
                 return QLatin1Char('a');
             bool allLetterOrNumber = true;
@@ -3168,7 +3176,7 @@ void TerminalDisplay::inputMethodEvent(QInputMethodEvent *event) {
                                          event->commitString());
     emit keyPressedSignal(&keyEvent, false);
 
-    _inputMethodData.preeditString = event->preeditString().toStdWString();
+    _inputMethodData.preeditString = event->preeditString().toUcs4();
     update(preeditRect() | _inputMethodData.previousPreeditRect);
 
     event->accept();

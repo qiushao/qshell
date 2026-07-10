@@ -31,6 +31,7 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTime>
+#include <QVector>
 
 #include "KeyboardTranslator.h"
 #include "Screen.h"
@@ -176,8 +177,7 @@ QString Emulation::keyBindings() const {
 
 // process application unicode input to terminal
 // this is a trivial scanner
-void Emulation::receiveChar(wchar_t c) {
-    c &= 0xff;
+void Emulation::receiveChar(uint c) {
     switch (c) {
         case '\b':
             _currentScreen->backspace();
@@ -206,7 +206,8 @@ void Emulation::sendKeyEvent(QKeyEvent *ev, bool) {
     if (!ev->text().isEmpty()) { // A block of text
         // Note that the text is proper unicode.
         // We should do a conversion here
-        emit sendData(ev->text().toUtf8().constData(), ev->text().length());
+        const QByteArray utf8Text = ev->text().toUtf8();
+        emit sendData(utf8Text.constData(), utf8Text.length());
     }
 }
 
@@ -228,16 +229,11 @@ void Emulation::receiveData(const char *text, int length) {
 
     bufferedUpdate();
 
-    /* XXX: the following code involves encoding & decoding of "UTF-16
-    * surrogate pairs", which does not work with characters higher than
-    * U+10FFFF
-    * https://unicodebook.readthedocs.io/unicode_encodings.html#surrogates
-    */
     QString utf16Text = _toUtf16(QByteArray::fromRawData(text, length));
-    std::wstring unicodeText = utf16Text.toStdWString();
+    const QVector<uint> unicodeText = utf16Text.toUcs4();
 
     // send characters to terminal emulator
-    for (wchar_t i : unicodeText)
+    for (uint i : unicodeText)
         receiveChar(i);
 
     // look for z-modem indicator

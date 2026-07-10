@@ -1,6 +1,6 @@
 {
     "appVersion": "V1.0.00",
-    "fontFamily": "Monospace",
+    "fontFamily": "Consolas",
     "fontSize": 16,
     "colorScheme": "Tango",
     "sessionCategories": [

@@ -66,7 +66,7 @@ public:
      * @param _b The color used to draw the character's background.
      * @param _r A set of rendition flags which specify how this character is to be drawn.
      */
-    inline Character(quint16 _c = ' ',
+    inline Character(uint _c = ' ',
             CharacterColor  _f = CharacterColor(COLOR_SPACE_DEFAULT,DEFAULT_FORE_COLOR),
             CharacterColor  _b = CharacterColor(COLOR_SPACE_DEFAULT,DEFAULT_BACK_COLOR),
             quint8  _r = DEFAULT_RENDITION)
@@ -81,7 +81,7 @@ public:
     * RE_EXTENDED_CHAR character is a hash code which can be used to look up the unicode
     * character sequence in the ExtendedCharTable used to create the sequence.
     */
-    wchar_t character;
+    uint character;
 
     /** A combination of RENDITION flags which specify options for drawing the character. */
     quint8  rendition;
@@ -125,7 +125,7 @@ public:
     }
 
     inline bool isSpace() const {
-        return (rendition & RE_EXTENDED_CHAR) ? false : QChar(character).isSpace();
+        return (rendition & RE_EXTENDED_CHAR) ? false : (character <= 0xffff && QChar(character).isSpace());
     }
 };
 
@@ -225,4 +225,3 @@ private:
 Q_DECLARE_TYPEINFO(Character, Q_MOVABLE_TYPE);
 
 #endif // CHARACTER_H
-

@@ -22,7 +22,20 @@
 #include "TerminalCharacterDecoder.h"
 #include "CharWidth.h"
 #include <QTextStream>
+#include <QVector>
 #include <cwctype>
+
+namespace {
+void appendCodePoint(QString &text, uint codePoint) {
+    if (codePoint <= 0xffff) {
+        text.append(QChar(static_cast<ushort>(codePoint)));
+    } else if (codePoint <= 0x10ffff) {
+        codePoint -= 0x10000;
+        text.append(QChar(static_cast<ushort>(0xd800 + (codePoint >> 10))));
+        text.append(QChar(static_cast<ushort>(0xdc00 + (codePoint & 0x3ff))));
+    }
+}
+}
 
 PlainTextDecoder::PlainTextDecoder()
     : _output(nullptr), _includeTrailingWhitespace(true),
@@ -75,7 +88,7 @@ void PlainTextDecoder::decodeLine(const Character* const characters, int count, 
     // note:  we build up a QString and send it to the text stream rather writing
     // into the text stream a character at a time because it is more efficient.
     //(since QTextStream always deals with QStrings internally anyway)
-    std::wstring plainText;
+    QString plainText;
     plainText.reserve(count);
 
     int outputCount = count;
@@ -96,21 +109,22 @@ void PlainTextDecoder::decodeLine(const Character* const characters, int count, 
             ushort extendedCharLength = 0;
             const uint* chars = ExtendedCharTable::instance.lookupExtendedChar(characters[i].character, extendedCharLength);
             if (chars) {
-                std::wstring str;
+                QVector<uint> str;
+                str.reserve(extendedCharLength);
                 for (ushort nchar = 0; nchar < extendedCharLength; nchar++) {
                     str.push_back(chars[nchar]);
+                    appendCodePoint(plainText, chars[nchar]);
                 }
-                plainText += str;
                 i += qMax(1, CharWidth::string_unicode_width(str));
             } else {
                 ++i;
             }
         } else {
-            plainText.push_back(characters[i].character);
+            appendCodePoint(plainText, characters[i].character);
             i += qMax(1, CharWidth::unicode_width(characters[i].character));
         }
     }
-    *_output << QString::fromStdWString(plainText);
+    *_output << plainText;
 }
 
 HTMLDecoder::HTMLDecoder()
@@ -123,22 +137,22 @@ HTMLDecoder::HTMLDecoder()
 void HTMLDecoder::begin(QTextStream *output) {
     _output = output;
 
-    std::wstring text;
+    QString text;
 
     // open monospace span
     openSpan(text, QLatin1String("font-family:monospace"));
 
-    *output << QString::fromStdWString(text);
+    *output << text;
 }
 
 void HTMLDecoder::end() {
     Q_ASSERT(_output);
 
-    std::wstring text;
+    QString text;
 
     closeSpan(text);
 
-    *_output << QString::fromStdWString(text);
+    *_output << text;
 
     _output = nullptr;
 }
@@ -147,7 +161,7 @@ void HTMLDecoder::end() {
 void HTMLDecoder::decodeLine(const Character *const characters, int count, LineProperty /*properties*/) {
     Q_ASSERT(_output);
 
-    std::wstring text;
+    QString text;
 
     int spaceCount = 0;
 
@@ -208,26 +222,26 @@ void HTMLDecoder::decodeLine(const Character *const characters, int count, LineP
                 const uint* chars = ExtendedCharTable::instance.lookupExtendedChar(characters[i].character, extendedCharLength);
                 if (chars) {
                     for (ushort nchar = 0; nchar < extendedCharLength; nchar++) {
-                        text.push_back(chars[nchar]);
+                        appendCodePoint(text, chars[nchar]);
                     }
                 }
             } else {
                 //escape HTML tag characters and just display others as they are
-                wchar_t ch(characters[i].character);
+                uint ch(characters[i].character);
                 if ( ch == '<' ) {
-                    text.append(L"&lt;");
+                    text.append(QLatin1String("&lt;"));
                 } else if (ch == '>') {
-                    text.append(L"&gt;");
+                    text.append(QLatin1String("&gt;"));
                 } else if (ch == '&') {
-                    text.append(L"&amp;");
+                    text.append(QLatin1String("&amp;"));
                 } else {
-                    text.push_back(ch);
+                    appendCodePoint(text, ch);
                 }
             }
         } else {
             // HTML truncates multiple spaces, so use a space marker instead
             // Use &#160 instead of &nbsp so xmllint will work.
-            text.append(L"&#160;");
+            text.append(QLatin1String("&#160;"));
         }
     }
 
@@ -236,17 +250,17 @@ void HTMLDecoder::decodeLine(const Character *const characters, int count, LineP
         closeSpan(text);
 
     // start new line
-    text.append(L"<br>");
+    text.append(QLatin1String("<br>"));
 
-    *_output << QString::fromStdWString(text);
+    *_output << text;
 }
 
-void HTMLDecoder::openSpan(std::wstring &text, const QString &style) {
-    text.append(QString(QLatin1String("<span style=\"%1\">")).arg(style).toStdWString());
+void HTMLDecoder::openSpan(QString &text, const QString &style) {
+    text.append(QString(QLatin1String("<span style=\"%1\">")).arg(style));
 }
 
-void HTMLDecoder::closeSpan(std::wstring &text) { 
-    text.append(L"</span>"); 
+void HTMLDecoder::closeSpan(QString &text) {
+    text.append(QLatin1String("</span>"));
 }
 
 void HTMLDecoder::setColorTable(const ColorEntry *table) {
