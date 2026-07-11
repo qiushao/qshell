@@ -27,6 +27,10 @@
 #include <QThread>
 #include <utility>
 
+#if defined(Q_OS_WIN)
+#include <qt_windows.h>
+#endif
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent) {
     setWindowState(Qt::WindowMaximized);
@@ -45,6 +49,16 @@ MainWindow::MainWindow(QWidget *parent)
     initButtonBar();
     restoreLayoutState();
     initMcpServer();
+
+#if defined(Q_OS_WIN)
+    qApp->installNativeEventFilter(this);
+#endif
+}
+
+MainWindow::~MainWindow() {
+#if defined(Q_OS_WIN)
+    qApp->removeNativeEventFilter(this);
+#endif
 }
 
 void MainWindow::initLuaEngine() {
@@ -586,6 +600,66 @@ void MainWindow::onToggleCommandButtonAction() {
     }
     ConfigManager::instance()->showCommandButton(!commandButtonBar_->isHidden());
 }
+
+BaseTerminal *MainWindow::terminalForWidget(QWidget *widget) {
+    while (widget != nullptr) {
+        if (auto *terminal = qobject_cast<BaseTerminal *>(widget)) {
+            return terminal;
+        }
+        widget = widget->parentWidget();
+    }
+    return nullptr;
+}
+
+#if defined(Q_OS_WIN)
+bool MainWindow::nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) {
+    Q_UNUSED(eventType)
+    Q_UNUSED(result)
+
+    const auto *nativeMessage = static_cast<MSG *>(message);
+    if ((nativeMessage->message != WM_KEYDOWN && nativeMessage->message != WM_KEYUP) ||
+        nativeMessage->wParam != 'C') {
+        return false;
+    }
+
+    const bool keyDownSeen = copyShortcutKeyDownSeen_;
+    if (nativeMessage->message == WM_KEYUP) {
+        copyShortcutKeyDownSeen_ = false;
+    }
+
+    const bool controlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool altPressed = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    const bool windowsPressed = (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
+                                (GetKeyState(VK_RWIN) & 0x8000) != 0;
+    if (!controlPressed || !shiftPressed || altPressed || windowsPressed) {
+        return false;
+    }
+
+    if (nativeMessage->message == WM_KEYDOWN) {
+        copyShortcutKeyDownSeen_ = true;
+        return false;
+    }
+
+    // A registered global hotkey can consume WM_KEYDOWN while still allowing
+    // WM_KEYUP through. Copy on release only when that missing-down pattern is
+    // observed; otherwise the regular QAction shortcut already handled it.
+    if (keyDownSeen) {
+        return false;
+    }
+
+    BaseTerminal *terminal = terminalForWidget(QApplication::focusWidget());
+    if (terminal == nullptr) {
+        terminal = currentTab_;
+    }
+    if (terminal == nullptr) {
+        return false;
+    }
+
+    terminal->copyClipboard();
+    return true;
+}
+#endif
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     if (isFullscreen_ && watched == fullscreenWidget_ && event->type() == QEvent::KeyPress) {

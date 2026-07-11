@@ -4,6 +4,9 @@
 #include <QMainWindow>
 #include <QShortcut>
 #include <QStringList>
+#if defined(Q_OS_WIN)
+#include <QAbstractNativeEventFilter>
+#endif
 
 class SessionTabWidget;
 class SessionTreeWidget;
@@ -14,12 +17,16 @@ class CollapsibleDockWidget;
 class LuaScriptEngine;
 class McpHttpServer;
 
-class MainWindow : public QMainWindow {
+class MainWindow : public QMainWindow
+#if defined(Q_OS_WIN)
+    , public QAbstractNativeEventFilter
+#endif
+{
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow() override = default;
+    ~MainWindow() override;
     void showEvent(QShowEvent *event) override;
     bool runScriptAtStartup(const QString &scriptPath, const QStringList &scriptArgs = {});
     Q_INVOKABLE QString getScreenText() const;
@@ -89,6 +96,12 @@ private:
     void initMcpServer();
     void restoreLayoutState();
     void exitFullscreen();
+    static BaseTerminal *terminalForWidget(QWidget *widget);
+
+#if defined(Q_OS_WIN)
+    bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override;
+    bool copyShortcutKeyDownSeen_ = false;
+#endif
 
     void runScript(const QString &scriptPath, const QStringList &scriptArgs = {});
     void addRecentScript(const QString &scriptPath);
