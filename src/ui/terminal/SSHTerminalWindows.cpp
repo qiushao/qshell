@@ -1,8 +1,11 @@
 #include "SSHTerminal.h"
+#include "WindowsX11Server.h"
 #include "qtermwidget.h"
-#include <QDebug>
-#include <QMessageBox>
 #include <QCoreApplication>
+#include <QDebug>
+#include <QEventLoop>
+#include <QMessageBox>
+#include <QTimer>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 
@@ -55,6 +58,9 @@ void SSHTerminal::connect() {
                      this, &SSHTerminal::onSocketReadyRead);
     readNotifier_->setEnabled(true);
 
+    QTimer::singleShot(0, this, &SSHTerminal::syncPtySize);
+    QTimer::singleShot(100, this, &SSHTerminal::syncPtySize);
+
     qDebug() << "SSH connection established to" << sessionData_.name;
 }
 
@@ -85,8 +91,11 @@ void SSHTerminal::onSocketReadyRead() {
     pumpRemoteX11();       // 远端→本地 累积与下发
     // 把本地积压（EAGAIN 时未写完）继续推送到远端
     for (auto *xf : x11Chans_) {
-        flushX11ToRemote(xf);
+        if (!xf->closed) {
+            flushX11ToRemote(xf);
+        }
     }
+    purgeClosedX11Forwards();
 
     // 重新启用通知
     if (readNotifier_ && running_) {
@@ -441,14 +450,23 @@ bool SSHTerminal::openChannel() {
     }
 
     // —— 请求 X11 转发（0=允许多连接）——
-    rc = libssh2_channel_x11_req(channel_, 0);
-    if (rc) {
-        QMessageBox::critical(this, tr("SSH Error"), tr("Failed to request X11 forwarding"));
-        emit onSessionError(this);
-        return false;
+    x11ForwardingEnabled_ = false;
+    auto &x11Server = WindowsX11Server::instance();
+    if (x11Server.ensureRunning()) {
+        rc = libssh2_channel_x11_req(channel_, 0);
+        if (rc == 0) {
+            x11ForwardingEnabled_ = true;
+            qDebug() << "X11 forwarding requested; local X server is ready on"
+                     << x11Server.displayName();
+        } else {
+            qWarning() << "SSH server denied X11 forwarding; continuing without X11";
+        }
+    } else {
+        qWarning() << "Local X11 server unavailable; continuing SSH session without X11:"
+                   << x11Server.lastError();
     }
 
-    libssh2_channel_request_pty_size(channel_, 80, 24);
+    syncPtySize();
 
     rc = libssh2_channel_shell(channel_);
     if (rc) {
@@ -488,9 +506,23 @@ void SSHTerminal::sendData(const QByteArray &data) {
 }
 
 void SSHTerminal::resizePty(int cols, int rows) {
-    if (!channel_ || !running_) return;
+    if (!channel_) return;
 
-    libssh2_channel_request_pty_size(channel_, cols, rows);
+    if (cols <= 0) {
+        cols = 80;
+    }
+    if (rows <= 0) {
+        rows = 24;
+    }
+
+    int rc = libssh2_channel_request_pty_size(channel_, cols, rows);
+    if (rc != 0 && rc != LIBSSH2_ERROR_EAGAIN) {
+        qWarning() << "Failed to resize SSH PTY to" << cols << "x" << rows << "error" << rc;
+    }
+}
+
+void SSHTerminal::syncPtySize() {
+    resizePty(screenColumnsCount(), screenLinesCount());
 }
 
 // ====== X11 ======
@@ -501,12 +533,41 @@ void SSHTerminal::x11Callback(LIBSSH2_SESSION*,
                               void **abstract)
 {
     auto *self = static_cast<SSHTerminal*>(*abstract);
-    if (self) self->handleNewX11Channel(channel);
+    if (self) self->queueNewX11Channel(channel);
+}
+
+void SSHTerminal::queueNewX11Channel(LIBSSH2_CHANNEL *chan)
+{
+    if (!chan) return;
+
+    pendingX11Chans_.push_back(chan);
+    QTimer::singleShot(0, this, &SSHTerminal::drainPendingX11Channels);
+}
+
+void SSHTerminal::drainPendingX11Channels()
+{
+    std::vector<LIBSSH2_CHANNEL *> pending;
+    pending.swap(pendingX11Chans_);
+
+    for (LIBSSH2_CHANNEL *chan: pending) {
+        if (running_ && channel_) {
+            handleNewX11Channel(chan);
+        } else {
+            libssh2_channel_free(chan);
+        }
+    }
 }
 
 void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
 {
-    // 连接 127.0.0.1:6000（VcXsrv，DISPLAY :0）
+    auto &x11Server = WindowsX11Server::instance();
+    if (!x11ForwardingEnabled_ || !x11Server.ensureRunning()) {
+        libssh2_channel_free(chan);
+        qWarning() << "Rejected X11 channel because no local X11 server is available";
+        return;
+    }
+
+    // Bridge the SSH X11 child channel to the local X server selected by WindowsX11Server.
     SOCKET xsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (xsock == INVALID_SOCKET) {
         libssh2_channel_free(chan);
@@ -515,13 +576,13 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
 
     sockaddr_in addr {};
     addr.sin_family = AF_INET;
-    addr.sin_port   = htons(6000);
+    addr.sin_port   = htons(x11Server.port());
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
 
     if (::connect(xsock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
         closesocket(xsock);
         libssh2_channel_free(chan);
-        qWarning() << "Failed to connect to local X server (VcXsrv)";
+        qWarning() << "Failed to connect to local X server on" << x11Server.host() << x11Server.port();
         return;
     }
 
@@ -543,18 +604,19 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
             if (n > 0) {
                 xf->toRemote.append(buf, n);
             } else if (n == 0) {
-                if (xf->notifier) xf->notifier->deleteLater();
-                libssh2_channel_send_eof(xf->chan);
+                closeX11Forward(xf);
                 break;
             } else {
                 int err = WSAGetLastError();
                 if (err == WSAEWOULDBLOCK) break;
-                if (xf->notifier) xf->notifier->deleteLater();
-                libssh2_channel_send_eof(xf->chan);
+                closeX11Forward(xf);
                 break;
             }
         }
-        flushX11ToRemote(xf);
+        if (!xf->closed) {
+            flushX11ToRemote(xf);
+        }
+        purgeClosedX11Forwards();
     });
 
     // 远端 -> 本地：写就绪（当 send() 返回 EWOULDBLOCK 时启用）
@@ -562,11 +624,15 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
     xf->writable->setEnabled(false);
     QObject::connect(xf->writable, &QSocketNotifier::activated,
                      this, [this, xf](qintptr){
-        flushX11ToLocal(xf);
+        if (!xf->closed) {
+            flushX11ToLocal(xf);
+        }
+        purgeClosedX11Forwards();
     });
 
     x11Chans_.push_back(xf);
-    qDebug() << "X11 channel bridged to VcXsrv (:0)";
+    qDebug() << "X11 channel bridged to local display" << x11Server.displayName();
+    pumpRemoteX11();
 }
 
 void SSHTerminal::pumpRemoteX11()
@@ -575,6 +641,11 @@ void SSHTerminal::pumpRemoteX11()
 
     for (auto it = x11Chans_.begin(); it != x11Chans_.end(); ) {
         X11Forward *xf = *it;
+        if (xf->closed) {
+            delete xf;
+            it = x11Chans_.erase(it);
+            continue;
+        }
 
         // 远端可读 -> 累积到 toLocal
         for (;;) {
@@ -585,10 +656,7 @@ void SSHTerminal::pumpRemoteX11()
             } else if (r == LIBSSH2_ERROR_EAGAIN) {
                 break;
             } else { // 关闭或错误
-                if (xf->notifier) xf->notifier->deleteLater();
-                if (xf->writable) xf->writable->deleteLater();
-                if (xf->xsock != INVALID_SOCKET) closesocket(xf->xsock);
-                if (xf->chan) libssh2_channel_free(xf->chan);
+                closeX11Forward(xf);
                 delete xf;
                 it = x11Chans_.erase(it);
                 goto next_iter;
@@ -605,16 +673,14 @@ void SSHTerminal::pumpRemoteX11()
 
 void SSHTerminal::flushX11ToLocal(X11Forward *xf)
 {
+    if (!xf || xf->closed) return;
+
     while (!xf->toLocal.isEmpty()) {
         int w = send(xf->xsock, xf->toLocal.constData(), xf->toLocal.size(), 0);
         if (w > 0) {
             xf->toLocal.remove(0, w);
         } else if (w == 0) {
-            if (xf->notifier) xf->notifier->deleteLater();
-            if (xf->writable) xf->writable->deleteLater();
-            closesocket(xf->xsock);
-            libssh2_channel_free(xf->chan);
-            xf->xsock = INVALID_SOCKET;
+            closeX11Forward(xf);
             break;
         } else {
             int err = WSAGetLastError();
@@ -622,21 +688,19 @@ void SSHTerminal::flushX11ToLocal(X11Forward *xf)
                 if (xf->writable) xf->writable->setEnabled(true);
                 break;
             }
-            if (xf->notifier) xf->notifier->deleteLater();
-            if (xf->writable) xf->writable->deleteLater();
-            if (xf->xsock != INVALID_SOCKET) closesocket(xf->xsock);
-            if (xf->chan) libssh2_channel_free(xf->chan);
-            xf->xsock = INVALID_SOCKET;
+            closeX11Forward(xf);
             break;
         }
     }
-    if (xf->toLocal.isEmpty() && xf->writable) {
+    if (!xf->closed && xf->toLocal.isEmpty() && xf->writable) {
         xf->writable->setEnabled(false);
     }
 }
 
 void SSHTerminal::flushX11ToRemote(X11Forward *xf)
 {
+    if (!xf || xf->closed) return;
+
     while (!xf->toRemote.isEmpty()) {
         int w = libssh2_channel_write(xf->chan, xf->toRemote.constData(), xf->toRemote.size());
         if (w > 0) {
@@ -645,28 +709,74 @@ void SSHTerminal::flushX11ToRemote(X11Forward *xf)
         } else if (w == LIBSSH2_ERROR_EAGAIN) {
             break; // 等下一轮 onSocketReadyRead()
         } else {
-            if (xf->notifier) xf->notifier->deleteLater();
-            if (xf->writable) xf->writable->deleteLater();
-            if (xf->xsock != INVALID_SOCKET) closesocket(xf->xsock);
-            if (xf->chan) libssh2_channel_free(xf->chan);
-            xf->xsock = INVALID_SOCKET;
+            closeX11Forward(xf);
             break;
         }
+    }
+}
+
+void SSHTerminal::closeX11Forward(X11Forward *xf)
+{
+    if (!xf || xf->closed) return;
+
+    xf->closed = true;
+
+    if (xf->notifier) {
+        xf->notifier->setEnabled(false);
+        xf->notifier->deleteLater();
+        xf->notifier = nullptr;
+    }
+
+    if (xf->writable) {
+        xf->writable->setEnabled(false);
+        xf->writable->deleteLater();
+        xf->writable = nullptr;
+    }
+
+    if (xf->chan) {
+        libssh2_channel_send_eof(xf->chan);
+        libssh2_channel_free(xf->chan);
+        xf->chan = nullptr;
+    }
+
+    if (xf->xsock != INVALID_SOCKET) {
+        closesocket(xf->xsock);
+        xf->xsock = INVALID_SOCKET;
+    }
+
+    xf->toLocal.clear();
+    xf->toRemote.clear();
+}
+
+void SSHTerminal::purgeClosedX11Forwards()
+{
+    for (auto it = x11Chans_.begin(); it != x11Chans_.end();) {
+        X11Forward *xf = *it;
+        if (!xf->closed) {
+            ++it;
+            continue;
+        }
+
+        delete xf;
+        it = x11Chans_.erase(it);
     }
 }
 
 void SSHTerminal::cleanup() {
     running_ = false;
 
+    for (LIBSSH2_CHANNEL *chan: pendingX11Chans_) {
+        libssh2_channel_free(chan);
+    }
+    pendingX11Chans_.clear();
+
     // 关闭 X11 子通道与本地 socket
     for (auto *xf : x11Chans_) {
-        if (xf->notifier) xf->notifier->deleteLater();
-        if (xf->writable) xf->writable->deleteLater();
-        if (xf->chan)     libssh2_channel_free(xf->chan);
-        if (xf->xsock != INVALID_SOCKET) closesocket(xf->xsock);
+        closeX11Forward(xf);
         delete xf;
     }
     x11Chans_.clear();
+    x11ForwardingEnabled_ = false;
 
     if (channel_) {
         libssh2_channel_send_eof(channel_);

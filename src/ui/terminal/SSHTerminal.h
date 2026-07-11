@@ -8,9 +8,9 @@
 #include <QSocketNotifier>
 
 #if defined(Q_CC_MSVC)
+#include <vector>
 #include <winsock2.h>
 #include <libssh2.h>
-#include <vector>
 #endif
 
 class SSHTerminal : public BaseTerminal {
@@ -34,40 +34,47 @@ private:
     void cleanup();
     void sendData(const QByteArray &data);
     void resizePty(int cols, int rows);
+    void syncPtySize();
     void readAvailableData();
 
 private slots:
     void onSocketReadyRead();
 
 private:
-    // ===== X11 Forwarding（Windows） =====
     struct X11Forward {
-        LIBSSH2_CHANNEL *chan = nullptr;          // 远端 X11 子通道
-        SOCKET           xsock = INVALID_SOCKET;   // 本地到 VcXsrv 的 TCP
-        QSocketNotifier *notifier = nullptr;       // xsock 可读
-        QSocketNotifier *writable = nullptr;       // xsock 可写（背压用）
-        QByteArray toLocal;                        // 远端→本地 待写缓冲
-        QByteArray toRemote;                       // 本地→远端 待写缓冲
+        LIBSSH2_CHANNEL *chan = nullptr;
+        SOCKET xsock = INVALID_SOCKET;
+        QSocketNotifier *notifier = nullptr;
+        QSocketNotifier *writable = nullptr;
+        QByteArray toLocal;
+        QByteArray toRemote;
+        bool closed = false;
     };
 
     static void x11Callback(LIBSSH2_SESSION *session,
                             LIBSSH2_CHANNEL *channel,
                             char *shost, int sport,
                             void **abstract);
+    void queueNewX11Channel(LIBSSH2_CHANNEL *chan);
+    void drainPendingX11Channels();
     void handleNewX11Channel(LIBSSH2_CHANNEL *chan);
     void pumpRemoteX11();
     void flushX11ToLocal(X11Forward *xf);
     void flushX11ToRemote(X11Forward *xf);
+    void closeX11Forward(X11Forward *xf);
+    void purgeClosedX11Forwards();
 
 private:
     SOCKET sock_ = INVALID_SOCKET;
     LIBSSH2_SESSION *session_ = nullptr;
     LIBSSH2_CHANNEL *channel_ = nullptr;
     bool running_ = false;
+    bool x11ForwardingEnabled_ = false;
     QSocketNotifier *readNotifier_ = nullptr;
 
-    std::vector<X11Forward*> x11Chans_;
+    std::vector<LIBSSH2_CHANNEL *> pendingX11Chans_;
+    std::vector<X11Forward *> x11Chans_;
 #endif
 };
 
-#endif //QSHELL_SSH_TERMINAL_H
+#endif // QSHELL_SSH_TERMINAL_H

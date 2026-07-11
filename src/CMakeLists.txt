@@ -38,6 +38,8 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     )
     set(SRC_FILES ${SRC_FILES}
             ui/terminal/SSHTerminalWindows.cpp
+            ui/terminal/WindowsX11Server.cpp
+            ui/terminal/WindowsX11Server.h
             "${CMAKE_CURRENT_BINARY_DIR}/qshell.rc")
 else ()
     message(FATAL_ERROR "${CMAKE_SYSTEM_NAME} not supported")
@@ -71,6 +73,55 @@ target_link_libraries(qshell
 target_compile_definitions(qshell PRIVATE APP_VERSION="${APP_VERSION}")
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+    set(QSHELL_BUNDLED_X11_DIR "" CACHE PATH "Directory that contains a bundled Windows X11 server, such as VcXsrv")
+    set(QSHELL_BUNDLED_X11_INSTALLER "" CACHE FILEPATH "VcXsrv installer used for first-run automatic install")
+    set(QSHELL_X11_CANDIDATE_DIRS
+            "${QSHELL_BUNDLED_X11_DIR}"
+            "${CMAKE_SOURCE_DIR}/resources/x11"
+            "${CMAKE_SOURCE_DIR}/third_party/vcxsrv"
+    )
+    unset(QSHELL_RESOLVED_X11_DIR)
+    foreach (QSHELL_X11_CANDIDATE_DIR IN LISTS QSHELL_X11_CANDIDATE_DIRS)
+        if (QSHELL_X11_CANDIDATE_DIR AND EXISTS "${QSHELL_X11_CANDIDATE_DIR}/vcxsrv.exe")
+            set(QSHELL_RESOLVED_X11_DIR "${QSHELL_X11_CANDIDATE_DIR}")
+            break()
+        endif ()
+    endforeach ()
+    if (QSHELL_RESOLVED_X11_DIR)
+        add_custom_command(TARGET qshell POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${QSHELL_RESOLVED_X11_DIR}"
+                "$<TARGET_FILE_DIR:qshell>/x11"
+                COMMENT "Copying bundled X11 server...")
+    else ()
+        message(STATUS "No bundled Windows X11 server found; qshell will use an existing local X server when available")
+    endif ()
+
+    unset(QSHELL_RESOLVED_X11_INSTALLER)
+    if (QSHELL_BUNDLED_X11_INSTALLER AND EXISTS "${QSHELL_BUNDLED_X11_INSTALLER}")
+        set(QSHELL_RESOLVED_X11_INSTALLER "${QSHELL_BUNDLED_X11_INSTALLER}")
+    else ()
+        file(GLOB QSHELL_X11_INSTALLER_CANDIDATES CONFIGURE_DEPENDS
+                "${CMAKE_SOURCE_DIR}/resources/x11-installer/*.exe"
+                "${CMAKE_SOURCE_DIR}/third_party/vcxsrv-installer/*.exe"
+        )
+        if (QSHELL_X11_INSTALLER_CANDIDATES)
+            list(SORT QSHELL_X11_INSTALLER_CANDIDATES)
+            list(REVERSE QSHELL_X11_INSTALLER_CANDIDATES)
+            list(GET QSHELL_X11_INSTALLER_CANDIDATES 0 QSHELL_RESOLVED_X11_INSTALLER)
+        endif ()
+    endif ()
+    if (QSHELL_RESOLVED_X11_INSTALLER)
+        add_custom_command(TARGET qshell POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:qshell>/x11-installer"
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${QSHELL_RESOLVED_X11_INSTALLER}"
+                "$<TARGET_FILE_DIR:qshell>/x11-installer/"
+                COMMENT "Copying bundled X11 installer...")
+    else ()
+        message(STATUS "No bundled Windows X11 installer found; first-run install will be unavailable")
+    endif ()
+
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "$ENV{Qt6_DIR}/bin")
     # 编译后执行 windeployqt
     add_custom_command(TARGET qshell POST_BUILD

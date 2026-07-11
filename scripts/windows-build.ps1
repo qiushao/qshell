@@ -1,30 +1,40 @@
 <#
 .SYNOPSIS
-    QShell Build and Package Script
+    QShell build and package script for Windows.
 
 .PARAMETER BuildOnly
-    Build only, skip packaging
+    Build only, skip packaging.
 
 .PARAMETER Version
-    Version string for ZIP filename (if not specified, will try to get from git tag)
+    Version string for the ZIP filename. If omitted, the script tries the latest git tag and then falls back to 1.0.0.
 
 .PARAMETER BuildType
-    Build type: Release or Debug
+    Build type: Release or Debug.
 
 .PARAMETER OutputDir
-    Output directory
+    Output directory.
+
+.PARAMETER BundledX11Dir
+    Optional directory that contains vcxsrv.exe and its runtime files.
+
+.PARAMETER BundledX11Installer
+    Optional VcXsrv installer used for first-run automatic install.
 
 .EXAMPLE
     .\windows-build.ps1 -BuildOnly
     .\windows-build.ps1 -Version "1.0.0"
+    .\windows-build.ps1 -BundledX11Dir "C:\tools\VcXsrv"
+    .\windows-build.ps1 -BundledX11Installer "C:\tools\vcxsrv-64.21.1.10.0.installer.exe"
 #>
 
 param(
     [switch]$BuildOnly,
-    [string]$Version,  # 移除默认值，让后续逻辑处理
+    [string]$Version,
     [ValidateSet("Release", "Debug")]
     [string]$BuildType = "Release",
-    [string]$OutputDir = "deploy"
+    [string]$OutputDir = "deploy",
+    [string]$BundledX11Dir = $env:QSHELL_BUNDLED_X11_DIR,
+    [string]$BundledX11Installer = $env:QSHELL_BUNDLED_X11_INSTALLER
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,17 +62,11 @@ function Write-Err {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
-# ==================== 版本号获取逻辑 ====================
-# 优先使用传入参数，否则从 git tag 获取，最后使用默认值
-if ($PSBoundParameters.ContainsKey('Version') -and $Version) {
-    # 使用传入的参数
-} else {
-    # 尝试从 git tag 获取
+if (-not $Version) {
     try {
-        $gitTag = git describe --tags --abbrev=0 2>$null
-        if ($LASTEXITCODE -eq 0 -and $gitTag) {
-            # 移除开头的 v 或 V
-            $Version = $gitTag -replace '^[vV]', ''
+        $GitTag = git describe --tags --abbrev=0 2>$null
+        if ($LASTEXITCODE -eq 0 -and $GitTag) {
+            $Version = $GitTag -replace '^[vV]', ''
         } else {
             $Version = "1.0.0"
         }
@@ -74,29 +78,40 @@ if ($PSBoundParameters.ContainsKey('Version') -and $Version) {
 Write-Host ""
 Write-Info "Building version: $Version"
 
-# Get project root directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
 Push-Location $ProjectRoot
 
 try {
-    # ==================== CMake Configure ====================
     Write-Step "CMake Configure"
 
     $BuildDir = "build"
-
     if (-not (Test-Path $BuildDir)) {
         New-Item -ItemType Directory -Path $BuildDir | Out-Null
     }
 
-    cmake -B $BuildDir -S . -DAPP_VERSION=$Version -DCMAKE_BUILD_TYPE=$BuildType
+    $CMakeArgs = @(
+        "-B", $BuildDir,
+        "-S", ".",
+        "-DAPP_VERSION=$Version",
+        "-DCMAKE_BUILD_TYPE=$BuildType"
+    )
+    if ($BundledX11Dir) {
+        $CMakeArgs += "-DQSHELL_BUNDLED_X11_DIR=$BundledX11Dir"
+        Write-Info "Bundled X11 directory: $BundledX11Dir"
+    }
+    if ($BundledX11Installer) {
+        $CMakeArgs += "-DQSHELL_BUNDLED_X11_INSTALLER=$BundledX11Installer"
+        Write-Info "Bundled X11 installer: $BundledX11Installer"
+    }
+
+    cmake @CMakeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "CMake configure failed"
     }
     Write-Success "CMake configure completed"
 
-    # ==================== Build ====================
     Write-Step "Building ($BuildType)"
 
     cmake --build $BuildDir --config $BuildType --parallel
@@ -105,14 +120,12 @@ try {
     }
     Write-Success "Build completed"
 
-    # Exit if build only
     if ($BuildOnly) {
         Write-Info "Build only mode, skipping package"
         Pop-Location
         exit 0
     }
 
-    # ==================== Create Deploy Directory ====================
     Write-Step "Creating deploy directory"
 
     if (Test-Path $OutputDir) {
@@ -121,7 +134,6 @@ try {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
     Write-Success "Deploy directory created: $OutputDir"
 
-    # ==================== Copy Executable ====================
     Write-Step "Copying executable"
 
     $PossiblePaths = @(
@@ -132,9 +144,9 @@ try {
     )
 
     $ExePath = $null
-    foreach ($path in $PossiblePaths) {
-        if (Test-Path $path) {
-            $ExePath = $path
+    foreach ($Path in $PossiblePaths) {
+        if (Test-Path $Path) {
+            $ExePath = $Path
             break
         }
     }
@@ -147,10 +159,22 @@ try {
     Copy-Item -Path $ExePath -Destination "$OutputDir/" -Force
     Write-Success "Copied qshell.exe"
 
-    # ==================== Deploy Qt Dependencies ====================
+    $ExeDir = Split-Path -Parent $ExePath
+    $BuildX11Dir = Join-Path $ExeDir "x11"
+    if (Test-Path $BuildX11Dir) {
+        Copy-Item -Path $BuildX11Dir -Destination "$OutputDir/x11" -Recurse -Force
+        Write-Info "Copied bundled X11 server"
+    }
+
+    $BuildX11InstallerDir = Join-Path $ExeDir "x11-installer"
+    if (Test-Path $BuildX11InstallerDir) {
+        Copy-Item -Path $BuildX11InstallerDir -Destination "$OutputDir/x11-installer" -Recurse -Force
+        Write-Info "Copied bundled X11 installer"
+    }
+
     Write-Step "Deploying Qt dependencies"
 
-    $currentDir = Get-Location
+    $CurrentDir = Get-Location
     Set-Location $OutputDir
 
     if ($BuildType -eq "Debug") {
@@ -160,14 +184,13 @@ try {
     }
 
     if ($LASTEXITCODE -ne 0) {
-        Set-Location $currentDir
+        Set-Location $CurrentDir
         throw "windeployqt failed"
     }
 
-    Set-Location $currentDir
+    Set-Location $CurrentDir
     Write-Success "Qt dependencies deployed"
 
-    # ==================== Copy Additional Files ====================
     Write-Step "Copying additional files"
 
     if (Test-Path "config") {
@@ -191,11 +214,9 @@ try {
 
     Write-Success "Additional files copied"
 
-    # ==================== Create ZIP Archive ====================
     Write-Step "Creating ZIP archive"
 
     $ZipName = "qshell-$Version-win64.zip"
-
     if (Test-Path $ZipName) {
         Remove-Item -Path $ZipName -Force
     }
@@ -207,20 +228,17 @@ try {
     $SizeMB = [math]::Round($ZipInfo.Length / 1MB, 2)
     Write-Info "File size: $SizeMB MB"
 
-    # Set GitHub Actions environment variable
     if ($env:GITHUB_ENV) {
         "ZIP_NAME=$ZipName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
     }
 
-    # ==================== Done ====================
     Write-Step "Build and package completed!"
     Write-Host ""
     Write-Host "Output files:" -ForegroundColor Green
     Write-Host "  - $OutputDir/ (deploy directory)" -ForegroundColor White
     Write-Host "  - $ZipName (zip archive)" -ForegroundColor White
     Write-Host ""
-}
-catch {
+} catch {
     Write-Err $_.Exception.Message
     Pop-Location
     exit 1

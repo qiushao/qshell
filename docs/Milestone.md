@@ -14,9 +14,9 @@
 10. [x]实现 button bar
 11. [x]实现配置导入导出
 12. [x]实现 lua 脚本支持
-13. []实现 x11 
+13. [x]实现 x11
     [x] linux, macos 支持 x11
-    [] windows 支持 x11
+    [x] windows 支持 x11
 14. []实现 sftp
 15. []实现 zmode，ymode
 16. []历史命令自动补全
