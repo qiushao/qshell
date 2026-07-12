@@ -39,10 +39,10 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private slots:
-    void onToggleLogging();
+    void onToggleLogging(bool includeBufferedLogs);
 
 private:
-    void startLogging(const QString &filePath);
+    void startLogging(const QString &filePath, bool includeBufferedLogs);
     void stopLogging();
     void writeToLog(const QString &line);
 

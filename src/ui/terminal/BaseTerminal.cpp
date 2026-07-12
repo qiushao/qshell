@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QColorDialog>
 #include <QRandomGenerator>
+#include <QTextStream>
 #include <QTimer>
 
 BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
@@ -180,15 +181,26 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
     menu.addSeparator();
 
     // 日志保存操作
-    QAction *logAction = nullptr;
     if (logging_) {
-        logAction = menu.addAction(tr("停止保存日志"));
+        QAction *logAction = menu.addAction(tr("停止保存日志"));
         logAction->setIcon(QIcon::fromTheme("media-playback-stop"));
+        QObject::connect(logAction, &QAction::triggered, this, [this]() {
+            onToggleLogging(false);
+        });
     } else {
-        logAction = menu.addAction(tr("保存日志..."));
-        logAction->setIcon(QIcon::fromTheme("document-save"));
+        QMenu *logMenu = menu.addMenu(tr("保存日志"));
+        logMenu->setIcon(QIcon::fromTheme("document-save"));
+
+        QAction *fromNowAction = logMenu->addAction(tr("仅保存后续日志"));
+        QObject::connect(fromNowAction, &QAction::triggered, this, [this]() {
+            onToggleLogging(false);
+        });
+
+        QAction *includeBufferedLogsAction = logMenu->addAction(tr("保存已有及后续日志"));
+        QObject::connect(includeBufferedLogsAction, &QAction::triggered, this, [this]() {
+            onToggleLogging(true);
+        });
     }
-    QObject::connect(logAction, &QAction::triggered, this, &BaseTerminal::onToggleLogging);
 
     menu.addSeparator();
 
@@ -312,7 +324,7 @@ QColor BaseTerminal::generateRandomColor() {
     return QColor::fromHsv(hue, saturation, value);
 }
 
-void BaseTerminal::onToggleLogging() {
+void BaseTerminal::onToggleLogging(bool includeBufferedLogs) {
     if (logging_) {
         // 停止日志记录
         stopLogging();
@@ -356,7 +368,7 @@ void BaseTerminal::onToggleLogging() {
                 }
             }
 
-            startLogging(filePath);
+            startLogging(filePath, includeBufferedLogs);
 
             if (logging_) {
                 QMessageBox::information(this, tr("日志保存"),
@@ -366,7 +378,7 @@ void BaseTerminal::onToggleLogging() {
     }
 }
 
-void BaseTerminal::startLogging(const QString &filePath) {
+void BaseTerminal::startLogging(const QString &filePath, bool includeBufferedLogs) {
     if (logging_) {
         stopLogging();
     }
@@ -391,6 +403,26 @@ void BaseTerminal::startLogging(const QString &filePath) {
     QString header = QString("\n========== 日志开始: %1 ==========\n")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
     logFile_->write(header.toUtf8());
+
+    if (includeBufferedLogs) {
+        const int bufferedLineCount = historyLinesCount() + screenLinesCount();
+        if (bufferedLineCount > 0) {
+            QString bufferedLogs;
+            QTextStream stream(&bufferedLogs, QIODevice::WriteOnly);
+            saveHistory(&stream, 0, 0, bufferedLineCount - 1);
+            stream.flush();
+
+            // 终端屏幕未使用的行也在缓存中，避免将它们写成文件尾部的大量空行。
+            while (bufferedLogs.endsWith('\n') || bufferedLogs.endsWith('\r')) {
+                bufferedLogs.chop(1);
+            }
+            if (!bufferedLogs.isEmpty()) {
+                logFile_->write(bufferedLogs.toUtf8());
+                logFile_->write("\n");
+            }
+        }
+    }
+
     logFile_->flush();
 
     emit loggingStateChanged(true);
