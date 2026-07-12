@@ -10,6 +10,7 @@
 - Button Bar
 - Command Window
 - Lua script engine
+- x11 转发
 
 ![screen shot](./docs/screenshot/qshell-screenshot.png)
 
