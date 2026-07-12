@@ -1,10 +1,12 @@
 #include "SettingDialog.h"
-#include "qtermwidget.h"
 #include "core/ConfigManager.h"
+#include "core/McpShellEnvironment.h"
+#include "qtermwidget.h"
 
 #include <QIntValidator>
+#include <QMessageBox>
 
-SettingDialog::SettingDialog(QWidget *parent) :QDialog(parent) {
+SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     initWidgets();
     fillColorScheme();
     const auto config = ConfigManager::instance();
@@ -15,9 +17,9 @@ SettingDialog::SettingDialog(QWidget *parent) :QDialog(parent) {
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
     debugCheckBox_->setChecked(settings.debug);
     logTimestampCheckBox_->setChecked(settings.logTimestamp);
-    mcpEnabledCheckBox_->setChecked(settings.mcpEnabled);
     mcpPortEdit_->setText(QString::number(settings.mcpPort));
     mcpBearerTokenEdit_->setText(settings.mcpBearerToken);
+    mcpEnabledCheckBox_->setChecked(settings.mcpEnabled);
 }
 
 SettingDialog::~SettingDialog() = default;
@@ -80,11 +82,16 @@ void SettingDialog::initWidgets() {
     QObject::connect(regenerateMcpTokenButton_, &QPushButton::clicked, this, [this]() {
         mcpBearerTokenEdit_->setText(ConfigManager::generateMcpBearerToken());
     });
+    QObject::connect(mcpEnabledCheckBox_, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (enabled && mcpBearerTokenEdit_->text().isEmpty()) {
+            mcpBearerTokenEdit_->setText(ConfigManager::generateMcpBearerToken());
+        }
+    });
 }
 
 void SettingDialog::fillColorScheme() {
     QStringList schemes = QTermWidget::availableColorSchemes();
-    for (const QString &scheme : schemes) {
+    for (const QString &scheme: schemes) {
         colorSchemeEdit_->addItem(scheme, scheme);
     }
 }
@@ -106,6 +113,14 @@ void SettingDialog::onOK() {
     if (settings.mcpEnabled && settings.mcpBearerToken.isEmpty()) {
         settings.mcpBearerToken = ConfigManager::generateMcpBearerToken();
     }
+#if defined(Q_OS_UNIX)
+    if (settings.mcpEnabled) {
+        QString errorMessage;
+        if (!McpShellEnvironment::configure(settings.mcpBearerToken, &errorMessage)) {
+            QMessageBox::warning(this, tr("MCP Environment Setup"), errorMessage);
+        }
+    }
+#endif
     ConfigManager::instance()->setGlobalSettings(settings);
     close();
 }

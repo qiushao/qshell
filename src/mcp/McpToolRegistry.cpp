@@ -18,7 +18,7 @@
 namespace {
 constexpr int defaultWaitTimeoutMs = 30000;
 constexpr int maxWaitTimeoutMs = 300000;
-}
+}// namespace
 
 McpToolRegistry::McpToolRegistry(MainWindow *mainWindow, QObject *parent)
     : QObject(parent),
@@ -65,10 +65,14 @@ QJsonObject McpToolRegistry::makeToolDefinition(const QString &name,
                                                 const QString &title,
                                                 const QString &description,
                                                 const QJsonObject &inputSchema,
-                                                bool readOnly) {
+                                                bool readOnly,
+                                                bool destructive,
+                                                bool openWorld) {
     QJsonObject annotations;
     annotations["readOnlyHint"] = readOnly;
-    annotations["destructiveHint"] = false;
+    annotations["destructiveHint"] = destructive;
+    annotations["idempotentHint"] = readOnly;
+    annotations["openWorldHint"] = openWorld;
 
     QJsonObject tool;
     tool["name"] = name;
@@ -99,7 +103,9 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Open session by id"),
                                     tr("Open a configured qshell session using its id."),
                                     makeInputSchema(openByIdProperties, {"sessionId"}),
-                                    false));
+                                    false,
+                                    false,
+                                    true));
 
     QJsonObject openByNameProperties;
     openByNameProperties["sessionName"] = makeStringProperty(tr("Configured session name to open."));
@@ -107,7 +113,9 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Open session by name"),
                                     tr("Open a configured qshell session using its name."),
                                     makeInputSchema(openByNameProperties, {"sessionName"}),
-                                    false));
+                                    false,
+                                    false,
+                                    true));
 
     QJsonObject switchTabProperties;
     switchTabProperties["index"] = makeIntegerProperty(tr("Zero-based tab index to switch to."), 0);
@@ -128,13 +136,17 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Connect current tab"),
                                     tr("Connect the current terminal tab if it is disconnected."),
                                     makeInputSchema({}),
-                                    false));
+                                    false,
+                                    false,
+                                    true));
 
     tools.append(makeToolDefinition("qshell_disconnect_current",
                                     tr("Disconnect current tab"),
                                     tr("Disconnect the current terminal tab if it is connected."),
                                     makeInputSchema({}),
-                                    false));
+                                    false,
+                                    true,
+                                    true));
 
     QJsonObject sendTextProperties;
     sendTextProperties["text"] = makeStringProperty(tr("Text to send to the current terminal."));
@@ -143,7 +155,9 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Send text"),
                                     tr("Send text to the current terminal."),
                                     makeInputSchema(sendTextProperties, {"text"}),
-                                    false));
+                                    false,
+                                    true,
+                                    true));
 
     QJsonObject sendKeyProperties;
     sendKeyProperties["key"] = makeStringProperty(tr("Key name such as Enter, Tab, Ctrl+C, F1, Up, or Down."));
@@ -151,7 +165,9 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Send key"),
                                     tr("Send a named key press to the current terminal."),
                                     makeInputSchema(sendKeyProperties, {"key"}),
-                                    false));
+                                    false,
+                                    true,
+                                    true));
 
     tools.append(makeToolDefinition("qshell_get_screen_text",
                                     tr("Get screen text"),
@@ -169,7 +185,8 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     tr("Clear screen"),
                                     tr("Clear the current terminal screen."),
                                     makeInputSchema({}),
-                                    false));
+                                    false,
+                                    true));
 
     QJsonObject waitStringProperties;
     waitStringProperties["text"] = makeStringProperty(tr("Text to wait for in terminal output."));
@@ -195,21 +212,7 @@ QJsonArray McpToolRegistry::toolDefinitions() {
 }
 
 bool McpToolRegistry::hasTool(const QString &name) {
-    return name == "qshell_get_status"
-            || name == "qshell_list_sessions"
-            || name == "qshell_open_session_by_id"
-            || name == "qshell_open_session_by_name"
-            || name == "qshell_switch_tab"
-            || name == "qshell_next_tab"
-            || name == "qshell_connect_current"
-            || name == "qshell_disconnect_current"
-            || name == "qshell_send_text"
-            || name == "qshell_send_key"
-            || name == "qshell_get_screen_text"
-            || name == "qshell_get_last_line"
-            || name == "qshell_clear_screen"
-            || name == "qshell_wait_for_string"
-            || name == "qshell_wait_for_regex";
+    return name == "qshell_get_status" || name == "qshell_list_sessions" || name == "qshell_open_session_by_id" || name == "qshell_open_session_by_name" || name == "qshell_switch_tab" || name == "qshell_next_tab" || name == "qshell_connect_current" || name == "qshell_disconnect_current" || name == "qshell_send_text" || name == "qshell_send_key" || name == "qshell_get_screen_text" || name == "qshell_get_last_line" || name == "qshell_clear_screen" || name == "qshell_wait_for_string" || name == "qshell_wait_for_regex";
 }
 
 void McpToolRegistry::callTool(const QString &name, const QJsonObject &arguments, const ToolCallback &callback) {
@@ -286,9 +289,7 @@ void McpToolRegistry::runUiTool(const ToolFunction &function, const ToolCallback
     }
 
     ToolResponse response;
-    QMetaObject::invokeMethod(mainWindow_, [&response, &function]() {
-        response = function();
-    }, mainConnectionType());
+    QMetaObject::invokeMethod(mainWindow_, [&response, &function]() { response = function(); }, mainConnectionType());
     callback(response);
 }
 
@@ -329,7 +330,7 @@ McpToolRegistry::ToolResponse McpToolRegistry::getStatus() const {
 McpToolRegistry::ToolResponse McpToolRegistry::listSessions() {
     QJsonArray sessions;
     const QList<SessionData> configuredSessions = ConfigManager::instance()->sessions();
-    for (const SessionData &session : configuredSessions) {
+    for (const SessionData &session: configuredSessions) {
         QJsonObject sessionObject;
         sessionObject["id"] = session.id;
         sessionObject["name"] = session.name;
@@ -498,9 +499,7 @@ void McpToolRegistry::waitForString(const QJsonObject &arguments, const ToolCall
     if (QThread::currentThread() == mainWindow_->thread()) {
         startWaitForString(text, timeoutMs, callback);
     } else {
-        QMetaObject::invokeMethod(mainWindow_, [this, text, timeoutMs, callback]() {
-            startWaitForString(text, timeoutMs, callback);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(mainWindow_, [this, text, timeoutMs, callback]() { startWaitForString(text, timeoutMs, callback); }, Qt::QueuedConnection);
     }
 }
 
@@ -520,9 +519,7 @@ void McpToolRegistry::waitForRegex(const QJsonObject &arguments, const ToolCallb
     if (QThread::currentThread() == mainWindow_->thread()) {
         startWaitForRegex(pattern, timeoutMs, callback);
     } else {
-        QMetaObject::invokeMethod(mainWindow_, [this, pattern, timeoutMs, callback]() {
-            startWaitForRegex(pattern, timeoutMs, callback);
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(mainWindow_, [this, pattern, timeoutMs, callback]() { startWaitForRegex(pattern, timeoutMs, callback); }, Qt::QueuedConnection);
     }
 }
 

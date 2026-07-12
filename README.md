@@ -11,6 +11,7 @@
 - Command Window
 - Lua script engine
 - x11 转发
+- 本地 MCP 终端控制接口
 
 ![screen shot](./docs/screenshot/qshell-screenshot.png)
 
@@ -25,6 +26,9 @@
 
 ## Lua script engine
 请参考 [LuaScriptEngine](./docs/LuaScriptEngine.md)
+
+## MCP
+启用方式、Codex 配置和验证步骤请参考 [QShell MCP](./docs/MCP.md)。
 
 ## 感谢
 本项目代码引用或部份参考或依赖了以下开源项目，并在此表示感谢。

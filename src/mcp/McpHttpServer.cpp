@@ -20,7 +20,7 @@ constexpr const char *mcpProtocolVersion = "2025-06-18";
 QJsonValue responseId(const QJsonValue &id) {
     return id.isUndefined() ? QJsonValue(QJsonValue::Null) : id;
 }
-}
+}// namespace
 
 McpHttpServer::McpHttpServer(MainWindow *mainWindow, QObject *parent)
     : QObject(parent) {
@@ -71,8 +71,8 @@ void McpHttpServer::stop() {
         server_->close();
     }
 
-    const QList<QTcpSocket*> sockets = requestBuffers_.keys();
-    for (QTcpSocket *socket : sockets) {
+    const QList<QTcpSocket *> sockets = requestBuffers_.keys();
+    for (QTcpSocket *socket: sockets) {
         if (socket != nullptr) {
             socket->disconnectFromHost();
             socket->deleteLater();
@@ -291,7 +291,11 @@ void McpHttpServer::handleJsonRpcRequest(QTcpSocket *socket,
         result["protocolVersion"] = mcpProtocolVersion;
         result["capabilities"] = capabilities;
         result["serverInfo"] = serverInfo;
-        result["instructions"] = tr("Use these tools to control qshell terminal sessions on this local machine.");
+        result["instructions"] = tr(
+                "Control only the active qshell instance on this machine. Inspect status, sessions, and screen output "
+                "before changing terminal state. send_text and send_key act on a live terminal and may execute commands; "
+                "use them only when the user has requested that action. Use wait_for_string or wait_for_regex to verify "
+                "expected terminal output.");
         sendJsonRpcResponse(socket, makeJsonRpcResult(id, result));
         return;
     }
@@ -403,7 +407,7 @@ void McpHttpServer::sendHttpResponse(QTcpSocket *socket,
         response.append(contentType);
         response.append("\r\n");
     }
-    for (const auto &header : extraHeaders) {
+    for (const auto &header: extraHeaders) {
         response.append(header.first);
         response.append(": ");
         response.append(header.second);

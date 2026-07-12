@@ -244,6 +244,15 @@ bool ConfigManager::exportConfig(const QString& filePath, QString* errorMessage)
         file.close();
         return false;
     }
+#if defined(Q_OS_UNIX)
+    if (!file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Cannot restrict config file permissions: %1").arg(file.errorString());
+        }
+        file.close();
+        return false;
+    }
+#endif
     file.close();
     return true;
 }

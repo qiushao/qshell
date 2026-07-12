@@ -7,6 +7,8 @@ set(SRC_FILES main.cpp
         ui/SettingDialog.cpp
         core/CryptoHelper.cpp
         core/ConfigManager.cpp
+        core/McpShellEnvironment.cpp
+        core/McpShellEnvironment.h
         ui/session/CollapsibleDockWidget.cpp
         ui/session/SessionTabWidget.cpp
         ui/session/SessionTreeWidget.cpp

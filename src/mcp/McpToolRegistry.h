@@ -1,12 +1,12 @@
 #ifndef QSHELL_MCPTOOLREGISTRY_H
 #define QSHELL_MCPTOOLREGISTRY_H
 
+#include "core/datatype.h"
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <functional>
-#include "core/datatype.h"
 
 class MainWindow;
 
@@ -20,7 +20,7 @@ public:
         QJsonObject structuredContent;
     };
 
-    using ToolCallback = std::function<void(const ToolResponse&)>;
+    using ToolCallback = std::function<void(const ToolResponse &)>;
 
     explicit McpToolRegistry(MainWindow *mainWindow, QObject *parent = nullptr);
 
@@ -40,7 +40,9 @@ private:
                                           const QString &title,
                                           const QString &description,
                                           const QJsonObject &inputSchema,
-                                          bool readOnly);
+                                          bool readOnly,
+                                          bool destructive = false,
+                                          bool openWorld = false);
     static QString protocolToString(ProtocolType protocolType);
     static int timeoutFromArguments(const QJsonObject &arguments);
 
@@ -75,4 +77,4 @@ private:
     int port_ = 0;
 };
 
-#endif // QSHELL_MCPTOOLREGISTRY_H
+#endif// QSHELL_MCPTOOLREGISTRY_H
