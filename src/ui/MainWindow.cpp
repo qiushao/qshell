@@ -56,6 +56,7 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 MainWindow::~MainWindow() {
+    qDebug() << "~MainWindow";
 #if defined(Q_OS_WIN)
     qApp->removeNativeEventFilter(this);
 #endif
