@@ -257,7 +257,8 @@ bool SSHTerminal::initSession() {
     // 注册 X11 回调
     void **abs = libssh2_session_abstract(session_);
     *abs = this;
-    libssh2_session_callback_set(session_, LIBSSH2_CALLBACK_X11, (void*)x11Callback);
+    libssh2_session_callback_set2(session_, LIBSSH2_CALLBACK_X11,
+                                  reinterpret_cast<libssh2_cb_generic *>(x11Callback));
 
     qDebug() << "SSH handshake completed";
     return true;
@@ -453,13 +454,24 @@ bool SSHTerminal::openChannel() {
     x11ForwardingEnabled_ = false;
     auto &x11Server = WindowsX11Server::instance();
     if (x11Server.ensureRunning()) {
-        rc = libssh2_channel_x11_req(channel_, 0);
+        const QByteArray authenticationProtocol = x11Server.authenticationProtocol();
+        const QByteArray authenticationCookie = x11Server.authenticationCookie();
+        if (!authenticationProtocol.isEmpty() && !authenticationCookie.isEmpty()) {
+            rc = libssh2_channel_x11_req_ex(channel_, 0,
+                                            authenticationProtocol.constData(),
+                                            authenticationCookie.constData(), 0);
+        } else {
+            rc = libssh2_channel_x11_req(channel_, 0);
+        }
         if (rc == 0) {
             x11ForwardingEnabled_ = true;
             qDebug() << "X11 forwarding requested; local X server is ready on"
                      << x11Server.displayName();
         } else {
-            qWarning() << "SSH server denied X11 forwarding; continuing without X11";
+            char *errorMessage = nullptr;
+            libssh2_session_last_error(session_, &errorMessage, nullptr, 0);
+            qWarning() << "SSH server denied X11 forwarding; continuing without X11, error"
+                       << rc << (errorMessage ? errorMessage : "Unknown");
         }
     } else {
         qWarning() << "Local X11 server unavailable; continuing SSH session without X11:"
@@ -529,7 +541,7 @@ void SSHTerminal::syncPtySize() {
 
 void SSHTerminal::x11Callback(LIBSSH2_SESSION*,
                               LIBSSH2_CHANNEL* channel,
-                              char*, int,
+                              const char*, int,
                               void **abstract)
 {
     auto *self = static_cast<SSHTerminal*>(*abstract);

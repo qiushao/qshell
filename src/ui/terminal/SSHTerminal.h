@@ -53,7 +53,7 @@ private:
 
     static void x11Callback(LIBSSH2_SESSION *session,
                             LIBSSH2_CHANNEL *channel,
-                            char *shost, int sport,
+                            const char *shost, int sport,
                             void **abstract);
     void queueNewX11Channel(LIBSSH2_CHANNEL *chan);
     void drainPendingX11Channels();

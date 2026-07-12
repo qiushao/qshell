@@ -17,14 +17,14 @@
 .PARAMETER BundledX11Dir
     Optional directory that contains vcxsrv.exe and its runtime files.
 
-.PARAMETER BundledX11Installer
-    Optional VcXsrv installer used for first-run automatic install.
+.PARAMETER BundledX11RuntimeDir
+    Optional directory containing a portable VcXsrv .7z archive and 7zr.exe.
 
 .EXAMPLE
     .\windows-build.ps1 -BuildOnly
     .\windows-build.ps1 -Version "1.0.0"
     .\windows-build.ps1 -BundledX11Dir "C:\tools\VcXsrv"
-    .\windows-build.ps1 -BundledX11Installer "C:\tools\vcxsrv-64.21.1.10.0.installer.exe"
+    .\windows-build.ps1 -BundledX11RuntimeDir "C:\tools\vcxsrv-runtime"
 #>
 
 param(
@@ -34,7 +34,7 @@ param(
     [string]$BuildType = "Release",
     [string]$OutputDir = "deploy",
     [string]$BundledX11Dir = $env:QSHELL_BUNDLED_X11_DIR,
-    [string]$BundledX11Installer = $env:QSHELL_BUNDLED_X11_INSTALLER
+    [string]$BundledX11RuntimeDir = $env:QSHELL_BUNDLED_X11_RUNTIME_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,9 +101,9 @@ try {
         $CMakeArgs += "-DQSHELL_BUNDLED_X11_DIR=$BundledX11Dir"
         Write-Info "Bundled X11 directory: $BundledX11Dir"
     }
-    if ($BundledX11Installer) {
-        $CMakeArgs += "-DQSHELL_BUNDLED_X11_INSTALLER=$BundledX11Installer"
-        Write-Info "Bundled X11 installer: $BundledX11Installer"
+    if ($BundledX11RuntimeDir) {
+        $CMakeArgs += "-DQSHELL_BUNDLED_X11_RUNTIME_DIR=$BundledX11RuntimeDir"
+        Write-Info "Portable X11 runtime: $BundledX11RuntimeDir"
     }
 
     cmake @CMakeArgs
@@ -166,10 +166,10 @@ try {
         Write-Info "Copied bundled X11 server"
     }
 
-    $BuildX11InstallerDir = Join-Path $ExeDir "x11-installer"
-    if (Test-Path $BuildX11InstallerDir) {
-        Copy-Item -Path $BuildX11InstallerDir -Destination "$OutputDir/x11-installer" -Recurse -Force
-        Write-Info "Copied bundled X11 installer"
+    $BuildX11RuntimeDir = Join-Path $ExeDir "x11-runtime"
+    if (Test-Path $BuildX11RuntimeDir) {
+        Copy-Item -Path $BuildX11RuntimeDir -Destination "$OutputDir/x11-runtime" -Recurse -Force
+        Write-Info "Copied portable X11 runtime"
     }
 
     Write-Step "Deploying Qt dependencies"
