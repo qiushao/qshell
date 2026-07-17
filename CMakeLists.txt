@@ -38,3 +38,8 @@ endif()
 
 add_subdirectory(third_party)
 add_subdirectory(src)
+
+include(CTest)
+if (BUILD_TESTING)
+    add_subdirectory(tests)
+endif ()

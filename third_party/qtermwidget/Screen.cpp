@@ -151,29 +151,26 @@ int Screen::bottomMargin() const { return _bottomMargin; }
 
 void Screen::index() {
     //qiushao patch start
-    int startLine = 0;
-
-    if (cuY == _bottomMargin) {
-        startLine = lines + history->getLines() - 1;
-        scrollUp(1);
-    }
-    else if (cuY < lines-1) {
-        startLine = cuY;
-        cuY += 1;
-    }
-
     QString result;
     QTextStream stream(&result, QIODevice::ReadWrite);
 
     PlainTextDecoder decoder;
     decoder.begin(&stream);
-    copyLineToStream( startLine,
+    copyLineToStream( history->getLines() + cuY,
                       0,
                       -1,
                       &decoder,
                       false,
                       false );
     decoder.end();
+
+    if (cuY == _bottomMargin) {
+        scrollUp(1);
+    }
+    else if (cuY < lines-1) {
+        cuY += 1;
+    }
+
     emit onNewLine(result);
     //qiushao patch end
 }
