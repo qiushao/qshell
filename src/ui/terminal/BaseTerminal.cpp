@@ -18,6 +18,16 @@
 
 #include <algorithm>
 
+namespace {
+
+QString xyModemName(const XyModemTransfer::Protocol protocol) {
+    return protocol == XyModemTransfer::Protocol::Xmodem
+                   ? QStringLiteral("XMODEM")
+                   : QStringLiteral("YMODEM");
+}
+
+}// namespace
+
 BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     connect_ = false;
     logging_ = false;
@@ -42,9 +52,16 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
 
     QObject::connect(this, &QTermWidget::onNewLine, this, &BaseTerminal::onDisplayOutput);
 
+    xyModemTransfer_ = new XyModemTransfer(this);
     zmodemTransfer_ = new ZmodemTransfer(this);
     QObject::connect(this, &QTermWidget::sendData, this,
                      [this](const char *data, int size) {
+                         if (xyModemTransfer_->isActive()) {
+                             if (size == 1 && data[0] == 0x03) {
+                                 xyModemTransfer_->cancel();
+                             }
+                             return;
+                         }
                          if (zmodemTransfer_->isActive()) {
                              if (size == 1 && data[0] == 0x03) {
                                  zmodemTransfer_->cancel();
@@ -53,6 +70,74 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
                          }
                          writeToBackend(QByteArray(data, size));
                      });
+    QObject::connect(xyModemTransfer_,
+                     &XyModemTransfer::outboundData,
+                     this,
+                     [this](const QByteArray &data) {
+                         writeToBackend(data);
+                     });
+    QObject::connect(xyModemTransfer_,
+                     &XyModemTransfer::fileStarted,
+                     this,
+                     &BaseTerminal::onXyModemFileStarted);
+    QObject::connect(xyModemTransfer_,
+                     &XyModemTransfer::fileProgress,
+                     this,
+                     &BaseTerminal::onXyModemFileProgress);
+    QObject::connect(
+            xyModemTransfer_,
+            &XyModemTransfer::transferFinished,
+            this,
+            [this](XyModemTransfer::Protocol protocol,
+                   XyModemTransfer::Direction direction,
+                   int fileCount) {
+                closeXyModemProgress();
+                QTimer::singleShot(
+                        0,
+                        this,
+                        [this, protocol, direction, fileCount]() {
+                            const QString action =
+                                    direction == XyModemTransfer::Direction::Download
+                                            ? tr("下载")
+                                            : tr("上传");
+                            const QString protocolName =
+                                    xyModemName(protocol);
+                            QMessageBox::information(
+                                    this,
+                                    tr("%1 文件传输")
+                                            .arg(protocolName),
+                                    tr("%1 %2完成，共传输 %3 个文件。")
+                                            .arg(protocolName, action)
+                                            .arg(fileCount));
+                        });
+            });
+    QObject::connect(
+            xyModemTransfer_,
+            &XyModemTransfer::transferCanceled,
+            this,
+            [this](XyModemTransfer::Protocol,
+                   XyModemTransfer::Direction) {
+                closeXyModemProgress();
+            });
+    QObject::connect(
+            xyModemTransfer_,
+            &XyModemTransfer::transferFailed,
+            this,
+            [this](XyModemTransfer::Protocol protocol,
+                   XyModemTransfer::Direction,
+                   const QString &message) {
+                closeXyModemProgress();
+                QTimer::singleShot(
+                        0,
+                        this,
+                        [this, protocol, message]() {
+                            QMessageBox::warning(
+                                    this,
+                                    tr("%1 文件传输失败")
+                                            .arg(xyModemName(protocol)),
+                                    message);
+                        });
+            });
     QObject::connect(zmodemTransfer_, &ZmodemTransfer::outboundData,
                      this, [this](const QByteArray &data) {
                          writeToBackend(data);
@@ -113,6 +198,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
 BaseTerminal::~BaseTerminal() {
     // 确保关闭日志文件
     stopLogging();
+    closeXyModemProgress();
     closeZmodemProgress();
 
     delete font_;
@@ -214,6 +300,15 @@ void BaseTerminal::onCopyAvailable(bool copyAvailable) {
 }
 
 void BaseTerminal::receiveBackendData(const QByteArray &data) {
+    if (xyModemTransfer_->isActive()) {
+        const QByteArray terminalData =
+                xyModemTransfer_->consume(data);
+        if (!terminalData.isEmpty()) {
+            recvData(terminalData.constData(),
+                     static_cast<int>(terminalData.size()));
+        }
+        return;
+    }
     const QByteArray terminalData = zmodemTransfer_->consume(data);
     if (!terminalData.isEmpty()) {
         recvData(terminalData.constData(),
@@ -322,6 +417,160 @@ void BaseTerminal::closeZmodemProgress() {
     zmodemProgress_ = nullptr;
 }
 
+void BaseTerminal::startXyModemSend(
+        const XyModemTransfer::Protocol protocol) {
+    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
+        return;
+    }
+
+    const QString initialDirectory =
+            xyModemDirectory_.isEmpty()
+                    ? QDir::homePath()
+                    : xyModemDirectory_;
+    QStringList files;
+    if (protocol == XyModemTransfer::Protocol::Xmodem) {
+        const QString file = QFileDialog::getOpenFileName(
+                this,
+                tr("选择要通过 XMODEM 发送的文件"),
+                initialDirectory,
+                tr("所有文件 (*)"));
+        if (!file.isEmpty()) {
+            files.append(file);
+        }
+    } else {
+        files = QFileDialog::getOpenFileNames(
+                this,
+                tr("选择要通过 YMODEM 发送的文件"),
+                initialDirectory,
+                tr("所有文件 (*)"));
+    }
+    if (files.isEmpty()) {
+        return;
+    }
+
+    xyModemDirectory_ =
+            QFileInfo(files.constFirst()).absolutePath();
+    xyModemTransfer_->send(protocol, files);
+}
+
+void BaseTerminal::startXyModemReceive(
+        const XyModemTransfer::Protocol protocol) {
+    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
+        return;
+    }
+
+    const QString initialDirectory =
+            xyModemDirectory_.isEmpty()
+                    ? QDir::homePath()
+                    : xyModemDirectory_;
+    if (protocol == XyModemTransfer::Protocol::Xmodem) {
+        const QString filePath = QFileDialog::getSaveFileName(
+                this,
+                tr("选择 XMODEM 保存文件"),
+                QDir(initialDirectory)
+                        .filePath(QStringLiteral(
+                                "xmodem-download.bin")),
+                tr("所有文件 (*)"));
+        if (filePath.isEmpty()) {
+            return;
+        }
+        xyModemDirectory_ =
+                QFileInfo(filePath).absolutePath();
+        xyModemTransfer_->receive(protocol, filePath);
+        return;
+    }
+
+    const QString directory =
+            QFileDialog::getExistingDirectory(
+                    this,
+                    tr("选择 YMODEM 下载目录"),
+                    initialDirectory,
+                    QFileDialog::ShowDirsOnly);
+    if (directory.isEmpty()) {
+        return;
+    }
+    xyModemDirectory_ = directory;
+    xyModemTransfer_->receive(protocol, directory);
+}
+
+void BaseTerminal::onXyModemFileStarted(
+        const XyModemTransfer::Protocol protocol,
+        const XyModemTransfer::Direction direction,
+        const QString &fileName,
+        const qint64 size,
+        const int fileNumber,
+        const int fileCount) {
+    closeXyModemProgress();
+
+    const QString action =
+            direction == XyModemTransfer::Direction::Download
+                    ? tr("正在下载")
+                    : tr("正在上传");
+    const QString protocolName = xyModemName(protocol);
+    xyModemProgress_ = new QProgressDialog(this);
+    xyModemProgress_->setWindowTitle(
+            tr("%1 文件传输").arg(protocolName));
+    if (fileCount > 0) {
+        xyModemProgress_->setLabelText(
+                tr("%1 %2（%3/%4）")
+                        .arg(action, fileName)
+                        .arg(fileNumber)
+                        .arg(fileCount));
+    } else {
+        xyModemProgress_->setLabelText(
+                tr("%1 %2（第 %3 个文件）")
+                        .arg(action, fileName)
+                        .arg(fileNumber));
+    }
+    xyModemProgress_->setCancelButtonText(tr("取消"));
+    xyModemProgress_->setRange(0, size <= 0 ? 0 : 1000);
+    xyModemProgress_->setValue(0);
+    xyModemProgress_->setMinimumDuration(0);
+    xyModemProgress_->setAutoClose(false);
+    xyModemProgress_->setAutoReset(false);
+    xyModemProgress_->setWindowModality(Qt::WindowModal);
+    QObject::connect(xyModemProgress_,
+                     &QProgressDialog::canceled,
+                     xyModemTransfer_,
+                     &XyModemTransfer::cancel);
+    xyModemProgress_->show();
+}
+
+void BaseTerminal::onXyModemFileProgress(
+        XyModemTransfer::Protocol,
+        XyModemTransfer::Direction,
+        const QString &,
+        const qint64 transferred,
+        const qint64 size) {
+    if (xyModemProgress_ == nullptr) {
+        return;
+    }
+    if (size <= 0) {
+        xyModemProgress_->setRange(0, 0);
+        return;
+    }
+    const qint64 boundedTransferred =
+            std::clamp<qint64>(transferred, 0, size);
+    const int progress =
+            static_cast<int>(
+                    (boundedTransferred * 1000) / size);
+    xyModemProgress_->setRange(0, 1000);
+    xyModemProgress_->setValue(progress);
+}
+
+void BaseTerminal::closeXyModemProgress() {
+    if (xyModemProgress_ == nullptr) {
+        return;
+    }
+    QObject::disconnect(xyModemProgress_,
+                        nullptr,
+                        xyModemTransfer_,
+                        nullptr);
+    xyModemProgress_->close();
+    xyModemProgress_->deleteLater();
+    xyModemProgress_ = nullptr;
+}
+
 void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
     QMenu menu(this);
 
@@ -369,6 +618,78 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
         QObject::connect(includeBufferedLogsAction, &QAction::triggered, this, [this]() {
             onToggleLogging(true);
         });
+    }
+
+    menu.addSeparator();
+
+    QMenu *fileTransferMenu = menu.addMenu(tr("文件传输"));
+    const bool canStartFileTransfer =
+            isConnect() && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
+
+    QAction *sendXmodemAction =
+            fileTransferMenu->addAction(
+                    tr("通过 XMODEM 发送文件..."));
+    sendXmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            sendXmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemSend(
+                        XyModemTransfer::Protocol::Xmodem);
+            });
+
+    QAction *receiveXmodemAction =
+            fileTransferMenu->addAction(
+                    tr("通过 XMODEM 接收文件..."));
+    receiveXmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            receiveXmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemReceive(
+                        XyModemTransfer::Protocol::Xmodem);
+            });
+
+    fileTransferMenu->addSeparator();
+
+    QAction *sendYmodemAction =
+            fileTransferMenu->addAction(
+                    tr("通过 YMODEM 发送文件..."));
+    sendYmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            sendYmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemSend(
+                        XyModemTransfer::Protocol::Ymodem);
+            });
+
+    QAction *receiveYmodemAction =
+            fileTransferMenu->addAction(
+                    tr("通过 YMODEM 接收文件..."));
+    receiveYmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            receiveYmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemReceive(
+                        XyModemTransfer::Protocol::Ymodem);
+            });
+
+    if (xyModemTransfer_->isActive()) {
+        fileTransferMenu->addSeparator();
+        QAction *cancelTransferAction =
+                fileTransferMenu->addAction(
+                        tr("取消当前 X/YMODEM 传输"));
+        QObject::connect(
+                cancelTransferAction,
+                &QAction::triggered,
+                xyModemTransfer_,
+                &XyModemTransfer::cancel);
     }
 
     menu.addSeparator();

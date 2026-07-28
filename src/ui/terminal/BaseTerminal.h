@@ -4,6 +4,7 @@
 #include "qtermwidget.h"
 #include "core/datatype.h"
 #include "core/zmodem/ZmodemTransfer.h"
+#include "core/xymodem/XyModemTransfer.h"
 #include <QFile>
 #include <QMenu>
 #include <QColorDialog>
@@ -60,6 +61,20 @@ private:
                               qint64 transferred,
                               qint64 size);
     void closeZmodemProgress();
+    void startXyModemSend(XyModemTransfer::Protocol protocol);
+    void startXyModemReceive(XyModemTransfer::Protocol protocol);
+    void onXyModemFileStarted(XyModemTransfer::Protocol protocol,
+                              XyModemTransfer::Direction direction,
+                              const QString &fileName,
+                              qint64 size,
+                              int fileNumber,
+                              int fileCount);
+    void onXyModemFileProgress(XyModemTransfer::Protocol protocol,
+                               XyModemTransfer::Direction direction,
+                               const QString &fileName,
+                               qint64 transferred,
+                               qint64 size);
+    void closeXyModemProgress();
 
     // 高亮菜单相关方法
     void buildHighlightMenu(QMenu *parentMenu);
@@ -76,6 +91,9 @@ private:
     bool logging_ = false;
     QFile *logFile_ = nullptr;
     QString logFilePath_;
+    XyModemTransfer *xyModemTransfer_ = nullptr;
+    QProgressDialog *xyModemProgress_ = nullptr;
+    QString xyModemDirectory_;
     ZmodemTransfer *zmodemTransfer_ = nullptr;
     QProgressDialog *zmodemProgress_ = nullptr;
     QString zmodemDirectory_;

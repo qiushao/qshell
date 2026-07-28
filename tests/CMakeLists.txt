@@ -27,3 +27,21 @@ add_test(NAME zmodem_transfer_test
         COMMAND zmodem_transfer_test)
 set_tests_properties(zmodem_transfer_test PROPERTIES
         TIMEOUT 45)
+
+add_executable(xymodem_transfer_test
+        xymodem_transfer_test.cpp
+        ../src/core/xymodem/XyModemProtocol.cpp
+        ../src/core/xymodem/XyModemProtocol.h
+        ../src/core/xymodem/XyModemTransfer.cpp
+        ../src/core/xymodem/XyModemTransfer.h)
+
+target_include_directories(xymodem_transfer_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(xymodem_transfer_test
+        Qt::Core)
+
+add_test(NAME xymodem_transfer_test
+        COMMAND xymodem_transfer_test)
+set_tests_properties(xymodem_transfer_test PROPERTIES
+        TIMEOUT 30)

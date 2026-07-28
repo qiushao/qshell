@@ -1,7 +1,7 @@
 
 # qshell
 跨平台的终端管理工具，类似 xshell/SecureCRT/mobaxterm 的终端管理工具，目前支持 linux, windows, macos 平台
-支持协议：串口，ssh，local-shell；终端会话支持 ZMODEM 文件传输
+支持协议：串口，ssh，local-shell；终端会话支持 XMODEM、YMODEM、ZMODEM 文件传输
 
 已实现特性：
 - 会话管理
@@ -11,7 +11,7 @@
 - Command Window
 - Lua script engine
 - x11 转发
-- ZMODEM 文件上传和下载
+- XMODEM、YMODEM、ZMODEM 文件上传和下载
 - 本地 MCP 终端控制接口
 
 ![screen shot](./docs/screenshot/qshell-screenshot.png)
@@ -33,6 +33,9 @@
 
 ## ZMODEM
 使用方式和支持范围请参考 [ZMODEM 文件传输](./docs/ZMODEM.md)。
+
+## XMODEM / YMODEM
+使用方式和支持范围请参考 [XMODEM / YMODEM 文件传输](./docs/XYMODEM.md)。
 
 ## 感谢
 本项目代码引用或部份参考或依赖了以下开源项目，并在此表示感谢。
