@@ -3,11 +3,13 @@
 
 #include "qtermwidget.h"
 #include "core/datatype.h"
+#include "core/zmodem/ZmodemTransfer.h"
 #include <QFile>
 #include <QMenu>
 #include <QColorDialog>
 
 class IPtyProcess;
+class QProgressDialog;
 
 class BaseTerminal : public QTermWidget {
 
@@ -34,6 +36,8 @@ public:
 protected:
     void onDisplayOutput(const QString &line);
     void onCopyAvailable(bool copyAvailable);
+    void receiveBackendData(const QByteArray &data);
+    virtual void writeToBackend(const QByteArray &data) = 0;
 
     // 右键菜单事件
     void contextMenuEvent(QContextMenuEvent *event) override;
@@ -45,6 +49,17 @@ private:
     void startLogging(const QString &filePath, bool includeBufferedLogs);
     void stopLogging();
     void writeToLog(const QString &line);
+    void onZmodemDetected(ZmodemTransfer::Direction direction);
+    void onZmodemFileStarted(ZmodemTransfer::Direction direction,
+                             const QString &fileName,
+                             qint64 size,
+                             int fileNumber,
+                             int fileCount);
+    void onZmodemFileProgress(ZmodemTransfer::Direction direction,
+                              const QString &fileName,
+                              qint64 transferred,
+                              qint64 size);
+    void closeZmodemProgress();
 
     // 高亮菜单相关方法
     void buildHighlightMenu(QMenu *parentMenu);
@@ -61,6 +76,9 @@ private:
     bool logging_ = false;
     QFile *logFile_ = nullptr;
     QString logFilePath_;
+    ZmodemTransfer *zmodemTransfer_ = nullptr;
+    QProgressDialog *zmodemProgress_ = nullptr;
+    QString zmodemDirectory_;
 };
 
 #endif//QSHELL_BASE_TERMINAL_H

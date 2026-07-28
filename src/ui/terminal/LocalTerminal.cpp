@@ -19,3 +19,9 @@ void LocalTerminal::disconnect() {
     }
     connect_ = false;
 }
+
+void LocalTerminal::writeToBackend(const QByteArray &data) {
+    if (localShell_) {
+        localShell_->write(data);
+    }
+}

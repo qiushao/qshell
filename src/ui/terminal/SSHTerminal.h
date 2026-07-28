@@ -21,6 +21,9 @@ public:
     void connect() override;
     void disconnect() override;
 
+protected:
+    void writeToBackend(const QByteArray &data) override;
+
 #if defined(Q_CC_MSVC)
 private:
     bool createSocket();
@@ -32,7 +35,6 @@ private:
 
     QString getKnownHostsPath();
     void cleanup();
-    void sendData(const QByteArray &data);
     void resizePty(int cols, int rows);
     void syncPtySize();
     void readAvailableData();

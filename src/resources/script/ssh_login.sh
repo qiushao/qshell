@@ -58,5 +58,6 @@ if {[string length $password]} {
 	}
 	
 }
+fconfigure $user_spawn_id -translation binary -encoding binary
+fconfigure $spawn_id -translation binary -encoding binary
 interact
-

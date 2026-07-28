@@ -19,11 +19,6 @@ SSHTerminal::SSHTerminal(const SessionData &session, QWidget *parent)
     WSAStartup(MAKEWORD(2, 2), &wsaData);
     libssh2_init(0);
 
-    // 终端输入 -> SSH发送
-    QObject::connect(this, &QTermWidget::sendData, [this](const char *data, int size) {
-        sendData(QByteArray(data, size));
-    });
-
     // 终端大小改变时通知 SSH
     QObject::connect(this, &QTermWidget::termSizeChange, [this](int lines, int columns) {
         resizePty(columns, lines);
@@ -114,7 +109,8 @@ void SSHTerminal::readAvailableData() {
         ssize_t bytesRead = libssh2_channel_read(channel_, buffer, sizeof(buffer));
 
         if (bytesRead > 0) {
-            this->recvData(buffer, bytesRead);
+            receiveBackendData(QByteArray(buffer,
+                                          static_cast<int>(bytesRead)));
             continue;  // 继续尝试读取更多数据
         } else if (bytesRead == LIBSSH2_ERROR_EAGAIN) {
             // 没有更多数据可读
@@ -138,7 +134,8 @@ void SSHTerminal::readAvailableData() {
         ssize_t bytesRead = libssh2_channel_read_stderr(channel_, buffer, sizeof(buffer));
 
         if (bytesRead > 0) {
-            this->recvData(buffer, bytesRead);
+            receiveBackendData(QByteArray(buffer,
+                                          static_cast<int>(bytesRead)));
             continue;
         } else if (bytesRead == LIBSSH2_ERROR_EAGAIN || bytesRead <= 0) {
             break;
@@ -491,7 +488,7 @@ bool SSHTerminal::openChannel() {
     return true;
 }
 
-void SSHTerminal::sendData(const QByteArray &data) {
+void SSHTerminal::writeToBackend(const QByteArray &data) {
     if (!channel_ || !running_) return;
 
     const char *ptr = data.constData();

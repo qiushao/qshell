@@ -104,3 +104,9 @@ void SSHTerminal::disconnect() {
     }
     connect_ = false;
 }
+
+void SSHTerminal::writeToBackend(const QByteArray &data) {
+    if (localShell_) {
+        localShell_->write(data);
+    }
+}

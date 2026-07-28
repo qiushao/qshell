@@ -7,15 +7,11 @@ SerialTerminal::SerialTerminal(const SessionData &session, QWidget *parent) : Ba
     sessionData_ = session;
 
     serial_ = new QSerialPort(this);
-    // 把在终端的输入传给串口
-    QObject::connect(this, &QTermWidget::sendData, [this](const char *data, int size) {
-        serial_->write(data);
-    });
 
     // 把串口传过来的数据传给终端
     QObject::connect(serial_, &QSerialPort::readyRead, [this]() {
         const QByteArray data = serial_->readAll();
-        this->recvData(data.data(), (int)data.size());
+        receiveBackendData(data);
     });
 
     // 串口发生错误时的回调处理
@@ -52,5 +48,11 @@ void SerialTerminal::disconnect() {
 void SerialTerminal::handleError(QSerialPort::SerialPortError error) {
     if (error != QSerialPort::SerialPortError::NoError) {
         emit onSessionError(this);
+    }
+}
+
+void SerialTerminal::writeToBackend(const QByteArray &data) {
+    if (serial_->isOpen()) {
+        serial_->write(data);
     }
 }

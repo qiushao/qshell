@@ -12,6 +12,9 @@ public:
     void connect() override;
     void disconnect() override;
 
+protected:
+    void writeToBackend(const QByteArray &data) override;
+
 private:
     void handleError(QSerialPort::SerialPortError error);
     QSerialPort *serial_ = nullptr;

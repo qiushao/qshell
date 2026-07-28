@@ -9,6 +9,10 @@ set(SRC_FILES main.cpp
         core/ConfigManager.cpp
         core/McpShellEnvironment.cpp
         core/McpShellEnvironment.h
+        core/zmodem/ZmodemProtocol.cpp
+        core/zmodem/ZmodemProtocol.h
+        core/zmodem/ZmodemTransfer.cpp
+        core/zmodem/ZmodemTransfer.h
         ui/session/CollapsibleDockWidget.cpp
         ui/session/SessionTabWidget.cpp
         ui/session/SessionTreeWidget.cpp

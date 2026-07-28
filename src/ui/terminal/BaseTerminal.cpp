@@ -11,9 +11,12 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QColorDialog>
+#include <QProgressDialog>
 #include <QRandomGenerator>
 #include <QTextStream>
 #include <QTimer>
+
+#include <algorithm>
 
 BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     connect_ = false;
@@ -39,6 +42,70 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
 
     QObject::connect(this, &QTermWidget::onNewLine, this, &BaseTerminal::onDisplayOutput);
 
+    zmodemTransfer_ = new ZmodemTransfer(this);
+    QObject::connect(this, &QTermWidget::sendData, this,
+                     [this](const char *data, int size) {
+                         if (zmodemTransfer_->isActive()) {
+                             if (size == 1 && data[0] == 0x03) {
+                                 zmodemTransfer_->cancel();
+                             }
+                             return;
+                         }
+                         writeToBackend(QByteArray(data, size));
+                     });
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::outboundData,
+                     this, [this](const QByteArray &data) {
+                         writeToBackend(data);
+                     });
+    QObject::connect(zmodemTransfer_,
+                     &ZmodemTransfer::terminalDataReady,
+                     this,
+                     [this](const QByteArray &data) {
+                         recvData(data.constData(),
+                                  static_cast<int>(data.size()));
+                     });
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::detected,
+                     this, [this](ZmodemTransfer::Direction direction) {
+                         QTimer::singleShot(0, this, [this, direction]() {
+                             onZmodemDetected(direction);
+                         });
+                     });
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::fileStarted,
+                     this, &BaseTerminal::onZmodemFileStarted);
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::fileProgress,
+                     this, &BaseTerminal::onZmodemFileProgress);
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::transferFinished,
+                     this, [this](ZmodemTransfer::Direction direction,
+                                  int fileCount) {
+                         closeZmodemProgress();
+                         QTimer::singleShot(0, this, [this, direction, fileCount]() {
+                             const QString action =
+                                     direction == ZmodemTransfer::Direction::Download
+                                             ? tr("下载")
+                                             : tr("上传");
+                             QMessageBox::information(
+                                     this,
+                                     tr("ZMODEM 文件传输"),
+                                     tr("ZMODEM %1完成，共传输 %2 个文件。")
+                                             .arg(action)
+                                             .arg(fileCount));
+                         });
+                     });
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::transferCanceled,
+                     this, [this](ZmodemTransfer::Direction) {
+                         closeZmodemProgress();
+                     });
+    QObject::connect(zmodemTransfer_, &ZmodemTransfer::transferFailed,
+                     this, [this](ZmodemTransfer::Direction,
+                                  const QString &message) {
+                         closeZmodemProgress();
+                         QTimer::singleShot(0, this, [this, message]() {
+                             QMessageBox::warning(this,
+                                                  tr("ZMODEM 文件传输失败"),
+                                                  message);
+                         });
+                     });
+
     // 启用右键菜单
     setContextMenuPolicy(Qt::DefaultContextMenu);
 }
@@ -46,6 +113,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
 BaseTerminal::~BaseTerminal() {
     // 确保关闭日志文件
     stopLogging();
+    closeZmodemProgress();
 
     delete font_;
     font_ = nullptr;
@@ -69,14 +137,6 @@ void BaseTerminal::startLocalShell() {
         qWarning() << "Failed to create ConPty process!";
         return;
     }
-
-    // 连接发送数据
-    QObject::connect(this, &QTermWidget::sendData, this, [this](const char *data, int size) {
-        if (localShell_) {
-            QByteArray senddata(data, size);
-            localShell_->write(senddata);
-        }
-    });
 
     // 连接大小变化
     QObject::connect(this, &QTermWidget::termSizeChange, this, [this](int lines, int columns) {
@@ -105,7 +165,7 @@ void BaseTerminal::startLocalShell() {
         QObject::connect(notifier, &QIODevice::readyRead, this, [this]() {
             QByteArray data = localShell_->readAll();
             if (!data.isEmpty()) {
-                this->recvData(data.data(), static_cast<int>(data.size()));
+                receiveBackendData(data);
             }
         });
     } else {
@@ -151,6 +211,115 @@ void BaseTerminal::onCopyAvailable(bool copyAvailable) {
     if (copyAvailable) {
         copyClipboard();
     }
+}
+
+void BaseTerminal::receiveBackendData(const QByteArray &data) {
+    const QByteArray terminalData = zmodemTransfer_->consume(data);
+    if (!terminalData.isEmpty()) {
+        recvData(terminalData.constData(),
+                 static_cast<int>(terminalData.size()));
+    }
+}
+
+void BaseTerminal::onZmodemDetected(
+        ZmodemTransfer::Direction direction) {
+    if (!zmodemTransfer_->isActive()
+        || zmodemTransfer_->direction() != direction) {
+        return;
+    }
+
+    const QString initialDirectory =
+            zmodemDirectory_.isEmpty()
+                    ? QDir::homePath()
+                    : zmodemDirectory_;
+    if (direction == ZmodemTransfer::Direction::Download) {
+        const QString directory = QFileDialog::getExistingDirectory(
+                this,
+                tr("选择 ZMODEM 下载目录"),
+                initialDirectory,
+                QFileDialog::ShowDirsOnly);
+        if (directory.isEmpty()) {
+            zmodemTransfer_->reject();
+            return;
+        }
+        zmodemDirectory_ = directory;
+        zmodemTransfer_->acceptDownload(directory);
+        return;
+    }
+
+    const QStringList files = QFileDialog::getOpenFileNames(
+            this,
+            tr("选择要通过 ZMODEM 上传的文件"),
+            initialDirectory,
+            tr("所有文件 (*)"));
+    if (files.isEmpty()) {
+        zmodemTransfer_->reject();
+        return;
+    }
+    zmodemDirectory_ = QFileInfo(files.constFirst()).absolutePath();
+    zmodemTransfer_->acceptUpload(files);
+}
+
+void BaseTerminal::onZmodemFileStarted(
+        ZmodemTransfer::Direction direction,
+        const QString &fileName,
+        qint64 size,
+        int fileNumber,
+        int fileCount) {
+    closeZmodemProgress();
+
+    const QString action =
+            direction == ZmodemTransfer::Direction::Download
+                    ? tr("正在下载")
+                    : tr("正在上传");
+    zmodemProgress_ = new QProgressDialog(this);
+    zmodemProgress_->setWindowTitle(tr("ZMODEM 文件传输"));
+    zmodemProgress_->setLabelText(
+            tr("%1 %2（%3/%4）")
+                    .arg(action, fileName)
+                    .arg(fileNumber)
+                    .arg(fileCount));
+    zmodemProgress_->setCancelButtonText(tr("取消"));
+    zmodemProgress_->setRange(0, size == 0 ? 0 : 1000);
+    zmodemProgress_->setValue(0);
+    zmodemProgress_->setMinimumDuration(0);
+    zmodemProgress_->setAutoClose(false);
+    zmodemProgress_->setAutoReset(false);
+    zmodemProgress_->setWindowModality(Qt::WindowModal);
+    QObject::connect(zmodemProgress_, &QProgressDialog::canceled,
+                     zmodemTransfer_, &ZmodemTransfer::cancel);
+    zmodemProgress_->show();
+}
+
+void BaseTerminal::onZmodemFileProgress(
+        ZmodemTransfer::Direction,
+        const QString &,
+        qint64 transferred,
+        qint64 size) {
+    if (zmodemProgress_ == nullptr) {
+        return;
+    }
+    if (size <= 0) {
+        zmodemProgress_->setRange(0, 0);
+        return;
+    }
+    const qint64 boundedTransferred =
+            std::clamp<qint64>(transferred, 0, size);
+    const int progress =
+            static_cast<int>((boundedTransferred * 1000) / size);
+    zmodemProgress_->setRange(0, 1000);
+    zmodemProgress_->setValue(progress);
+}
+
+void BaseTerminal::closeZmodemProgress() {
+    if (zmodemProgress_ == nullptr) {
+        return;
+    }
+    QObject::disconnect(zmodemProgress_, nullptr,
+                        zmodemTransfer_, nullptr);
+    zmodemProgress_->close();
+    zmodemProgress_->deleteLater();
+    zmodemProgress_ = nullptr;
 }
 
 void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {

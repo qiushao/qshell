@@ -12,6 +12,8 @@ public:
     void connect() override;
     void disconnect() override;
 
+protected:
+    void writeToBackend(const QByteArray &data) override;
 };
 
 
