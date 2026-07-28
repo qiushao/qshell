@@ -4,11 +4,14 @@
 #include "qtermwidget.h"
 #include "core/datatype.h"
 #include "core/zmodem/ZmodemTransfer.h"
+#include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemTransfer.h"
 #include <QFile>
 #include <QMenu>
 #include <QColorDialog>
+#include <QTimer>
 
+class QFileDialog;
 class IPtyProcess;
 class QProgressDialog;
 
@@ -63,6 +66,16 @@ private:
     void closeZmodemProgress();
     void startXyModemSend(XyModemTransfer::Protocol protocol);
     void startXyModemReceive(XyModemTransfer::Protocol protocol);
+    QStringList selectXyModemSendFiles(
+            XyModemTransfer::Protocol protocol);
+    QString selectXyModemReceiveDestination(
+            XyModemTransfer::Protocol protocol);
+    bool executeXyModemFileDialog(QFileDialog *dialog);
+    void beginPendingXyModemCommand(XyModemCommand command);
+    void processPendingXyModemData(const QByteArray &data);
+    void startPendingXyModemTransfer();
+    void clearPendingXyModemCommand();
+    void displayBackendData(const QByteArray &data);
     void onXyModemFileStarted(XyModemTransfer::Protocol protocol,
                               XyModemTransfer::Direction direction,
                               const QString &fileName,
@@ -91,6 +104,14 @@ private:
     bool logging_ = false;
     QFile *logFile_ = nullptr;
     QString logFilePath_;
+    XyModemCommandDetector xyModemCommandDetector_;
+    XyModemCommand pendingXyModemCommand_ =
+            XyModemCommand::None;
+    QTimer pendingXyModemTimer_;
+    QByteArray pendingXyModemOutput_;
+    QByteArray pendingXyModemProtocolData_;
+    bool pendingXyModemDialogScheduled_ = false;
+    QFileDialog *xyModemFileDialog_ = nullptr;
     XyModemTransfer *xyModemTransfer_ = nullptr;
     QProgressDialog *xyModemProgress_ = nullptr;
     QString xyModemDirectory_;

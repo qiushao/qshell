@@ -1,3 +1,4 @@
+#include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemProtocol.h"
 #include "core/xymodem/XyModemTransfer.h"
 
@@ -15,6 +16,109 @@
 #include <functional>
 
 namespace {
+
+bool testCommandDetector() {
+    struct TestCase {
+        QByteArray input;
+        XyModemCommand expected;
+    };
+    const QList<TestCase> testCases = {
+            {"rx target.bin\r", XyModemCommand::SendXmodem},
+            {" sx remote.bin \n", XyModemCommand::ReceiveXmodem},
+            {"rb\r", XyModemCommand::SendYmodem},
+            {"sb one.bin two.bin\r",
+             XyModemCommand::ReceiveYmodem},
+            {"/usr/bin/rx target.bin\r",
+             XyModemCommand::SendXmodem},
+            {"./sx remote.bin\r",
+             XyModemCommand::ReceiveXmodem},
+            {"/bin/busybox rx target.bin\r",
+             XyModemCommand::SendXmodem},
+            {"busybox sx remote.bin\r",
+             XyModemCommand::None},
+            {"busybox rb\r", XyModemCommand::None},
+            {"busybox sb remote.bin\r",
+             XyModemCommand::None},
+            {"rxtool\r", XyModemCommand::None},
+            {"echo rx\r", XyModemCommand::None},
+            {"rz\r", XyModemCommand::None},
+    };
+    for (const TestCase &testCase: testCases) {
+        XyModemCommandDetector detector;
+        if (detector.consume(testCase.input) != testCase.expected) {
+            qCritical() << "unexpected X/YMODEM command detection"
+                        << testCase.input;
+            return false;
+        }
+    }
+
+    XyModemCommandDetector fragmentedDetector;
+    if (fragmentedDetector.consume("r") != XyModemCommand::None || fragmentedDetector.consume("x target.bin\r") != XyModemCommand::SendXmodem) {
+        qCritical() << "fragmented X/YMODEM command was not detected";
+        return false;
+    }
+
+    XyModemCommandDetector editedDetector;
+    if (editedDetector.consume("rxx\b target.bin\r") != XyModemCommand::SendXmodem) {
+        qCritical() << "edited X/YMODEM command was not detected";
+        return false;
+    }
+
+    XyModemCommandDetector complexInputDetector;
+    if (complexInputDetector.consume("\x1b[Arx\r") != XyModemCommand::None) {
+        qCritical() << "terminal escape sequence was detected as a command";
+        return false;
+    }
+
+    XyModemCommandDetector pastedCommandDetector;
+    if (pastedCommandDetector.consume(
+                "\x1b[200~busybox rx target.bin\x1b[201~") != XyModemCommand::None ||
+        pastedCommandDetector.consume("\r") != XyModemCommand::SendXmodem) {
+        qCritical() << "bracketed-paste X/YMODEM command was not detected";
+        return false;
+    }
+
+    const QByteArray xmodemCrcHandshake =
+            QByteArrayLiteral("rx target.bin\r\n") + QByteArray(1, XyModem::crcRequest);
+    if (findXyModemReceiverHandshake(
+                XyModemCommand::SendXmodem,
+                xmodemCrcHandshake) != xmodemCrcHandshake.size() - 1 ||
+        findXyModemReceiverHandshake(
+                XyModemCommand::SendXmodem,
+                QByteArray(1, XyModem::nak)) != 0 ||
+        findXyModemReceiverHandshake(
+                XyModemCommand::SendYmodem,
+                QByteArray(1, XyModem::crcRequest)) != 0 ||
+        findXyModemReceiverHandshake(
+                XyModemCommand::ReceiveXmodem,
+                QByteArray(1, XyModem::crcRequest)) != -1 ||
+        findXyModemReceiverHandshake(
+                XyModemCommand::SendYmodem,
+                QByteArrayLiteral("Command failed")) != -1 ||
+        findXyModemReceiverHandshake(
+                XyModemCommand::SendXmodem,
+                QByteArrayLiteral("\r\nC\x1b[0m")) != 2) {
+        qCritical() << "X/YMODEM receiver handshake detection failed";
+        return false;
+    }
+
+    if (!containsXyModemCommandFailure(
+                QByteArrayLiteral(
+                        "-sh: rx: applet not found")) ||
+        !containsXyModemCommandFailure(
+                QByteArrayLiteral(
+                        "sx: command not recognized")) ||
+        !containsXyModemCommandFailure(
+                QByteArrayLiteral(
+                        "Usage: sx FILE")) ||
+        containsXyModemCommandFailure(
+                QByteArrayLiteral(
+                        "starting XMODEM transfer"))) {
+        qCritical() << "X/YMODEM command failure detection failed";
+        return false;
+    }
+    return true;
+}
 
 bool writeFile(const QString &path, const QByteArray &data) {
     QFile file(path);
@@ -698,6 +802,74 @@ bool testLrzszXmodemUpload(const QString &rxExecutable,
     return true;
 }
 
+bool busyBoxHasRxApplet(
+        const QString &busyBoxExecutable) {
+    QProcess process;
+    process.start(
+            busyBoxExecutable,
+            {QStringLiteral("--list")});
+    if (!process.waitForFinished(3000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return false;
+    }
+    return process.readAllStandardOutput()
+            .split('\n')
+            .contains(QByteArrayLiteral("rx"));
+}
+
+bool testBusyBoxXmodemUpload(
+        const QString &busyBoxExecutable) {
+    QTemporaryDir sourceDirectory;
+    QTemporaryDir destinationDirectory;
+    if (!sourceDirectory.isValid() || !destinationDirectory.isValid()) {
+        return false;
+    }
+
+    const QByteArray payload = testPayload(12288);
+    const QString sourcePath =
+            sourceDirectory.filePath(
+                    QStringLiteral("busybox-rx.bin"));
+    if (!writeFile(sourcePath, payload)) {
+        return false;
+    }
+
+    XyModemTransfer sender;
+    QProcess process;
+    process.setProgram(busyBoxExecutable);
+    process.setArguments(
+            {QStringLiteral("rx"),
+             QStringLiteral("busybox-rx.bin")});
+    process.setWorkingDirectory(
+            destinationDirectory.path());
+    ProcessTransferState state;
+    connectProcessTransfer(
+            &process, &sender, &state, 1);
+
+    process.start();
+    if (!process.waitForStarted(3000)) {
+        qCritical() << "cannot start BusyBox rx"
+                    << process.errorString();
+        return false;
+    }
+    sender.send(XyModemTransfer::Protocol::Xmodem,
+                {sourcePath});
+    if (!waitForProcessTransfer(
+                &state,
+                &process,
+                QStringLiteral(
+                        "BusyBox rx interoperability failed"))) {
+        return false;
+    }
+
+    const QString receivedPath =
+            destinationDirectory.filePath(
+                    QStringLiteral("busybox-rx.bin"));
+    if (readFile(receivedPath) != payload) {
+        qCritical() << "BusyBox rx upload contents mismatch";
+        return false;
+    }
+    return true;
+}
+
 bool testLrzszYmodemDownload(const QString &sbExecutable) {
     QTemporaryDir sourceDirectory;
     QTemporaryDir destinationDirectory;
@@ -804,8 +976,21 @@ bool testLrzszYmodemUpload(const QString &rbExecutable) {
 int main(int argc, char *argv[]) {
     QCoreApplication application(argc, argv);
 
-    if (!testProtocolCodec() || !testXmodemChecksumUpload() || !testXmodemReceivers() || !testYmodemInMemoryTransfer() || !testCanceledDownloadCleanup()) {
+    if (!testCommandDetector() || !testProtocolCodec() || !testXmodemChecksumUpload() || !testXmodemReceivers() || !testYmodemInMemoryTransfer() || !testCanceledDownloadCleanup()) {
         return 1;
+    }
+
+    const QString busyBoxExecutable =
+            QStandardPaths::findExecutable(
+                    QStringLiteral("busybox"));
+    if (!busyBoxExecutable.isEmpty() && busyBoxHasRxApplet(busyBoxExecutable)) {
+        if (!testBusyBoxXmodemUpload(
+                    busyBoxExecutable)) {
+            return 1;
+        }
+    } else {
+        qInfo() << "BusyBox rx applet is unavailable; "
+                   "skipping its interoperability check";
     }
 
     const QString sxExecutable =

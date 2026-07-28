@@ -20,10 +20,21 @@
 
 namespace {
 
+constexpr int pendingSendTimeoutMilliseconds = 5000;
+constexpr int pendingReceiveDelayMilliseconds = 300;
+constexpr qsizetype maximumPendingOutputSize = 4096;
+
 QString xyModemName(const XyModemTransfer::Protocol protocol) {
     return protocol == XyModemTransfer::Protocol::Xmodem
                    ? QStringLiteral("XMODEM")
                    : QStringLiteral("YMODEM");
+}
+
+XyModemTransfer::Protocol xyModemProtocol(
+        const XyModemCommand command) {
+    return command == XyModemCommand::SendXmodem || command == XyModemCommand::ReceiveXmodem
+                   ? XyModemTransfer::Protocol::Xmodem
+                   : XyModemTransfer::Protocol::Ymodem;
 }
 
 }// namespace
@@ -54,6 +65,19 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
 
     xyModemTransfer_ = new XyModemTransfer(this);
     zmodemTransfer_ = new ZmodemTransfer(this);
+    pendingXyModemTimer_.setSingleShot(true);
+    QObject::connect(
+            &pendingXyModemTimer_,
+            &QTimer::timeout,
+            this,
+            [this]() {
+                if (isXyModemSendCommand(
+                            pendingXyModemCommand_)) {
+                    clearPendingXyModemCommand();
+                    return;
+                }
+                startPendingXyModemTransfer();
+            });
     QObject::connect(this, &QTermWidget::sendData, this,
                      [this](const char *data, int size) {
                          if (xyModemTransfer_->isActive()) {
@@ -68,7 +92,18 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
                              }
                              return;
                          }
-                         writeToBackend(QByteArray(data, size));
+                         if (pendingXyModemCommand_ != XyModemCommand::None && size == 1 && data[0] == 0x03) {
+                             clearPendingXyModemCommand();
+                         }
+                         const QByteArray outboundData(data, size);
+                         writeToBackend(outboundData);
+                         const XyModemCommand command =
+                                 xyModemCommandDetector_.consume(
+                                         outboundData);
+                         if (command == XyModemCommand::None) {
+                             return;
+                         }
+                         beginPendingXyModemCommand(command);
                      });
     QObject::connect(xyModemTransfer_,
                      &XyModemTransfer::outboundData,
@@ -309,11 +344,100 @@ void BaseTerminal::receiveBackendData(const QByteArray &data) {
         }
         return;
     }
+    if (pendingXyModemCommand_ != XyModemCommand::None) {
+        processPendingXyModemData(data);
+        return;
+    }
+    displayBackendData(data);
+}
+
+void BaseTerminal::displayBackendData(
+        const QByteArray &data) {
     const QByteArray terminalData = zmodemTransfer_->consume(data);
     if (!terminalData.isEmpty()) {
         recvData(terminalData.constData(),
                  static_cast<int>(terminalData.size()));
     }
+}
+
+void BaseTerminal::beginPendingXyModemCommand(
+        const XyModemCommand command) {
+    clearPendingXyModemCommand();
+    if (!isConnect()) {
+        return;
+    }
+
+    pendingXyModemCommand_ = command;
+    pendingXyModemTimer_.start(
+            isXyModemSendCommand(command)
+                    ? pendingSendTimeoutMilliseconds
+                    : pendingReceiveDelayMilliseconds);
+}
+
+void BaseTerminal::processPendingXyModemData(
+        const QByteArray &data) {
+    if (isXyModemSendCommand(
+                pendingXyModemCommand_) &&
+        pendingXyModemDialogScheduled_) {
+        if (data.contains(XyModem::can)) {
+            clearPendingXyModemCommand();
+        }
+        return;
+    }
+
+    pendingXyModemOutput_.append(data);
+    if (pendingXyModemOutput_.size() > maximumPendingOutputSize) {
+        pendingXyModemOutput_.remove(
+                0,
+                pendingXyModemOutput_.size() - maximumPendingOutputSize);
+    }
+    if (containsXyModemCommandFailure(
+                pendingXyModemOutput_)) {
+        clearPendingXyModemCommand();
+        displayBackendData(data);
+        return;
+    }
+
+    if (!isXyModemSendCommand(
+                pendingXyModemCommand_)) {
+        displayBackendData(data);
+        return;
+    }
+    if (data.contains(XyModem::can)) {
+        clearPendingXyModemCommand();
+        return;
+    }
+
+    const qsizetype handshakeIndex =
+            findXyModemReceiverHandshake(
+                    pendingXyModemCommand_, data);
+    if (handshakeIndex < 0) {
+        displayBackendData(data);
+        return;
+    }
+
+    if (handshakeIndex > 0) {
+        displayBackendData(data.left(handshakeIndex));
+    }
+    pendingXyModemProtocolData_ =
+            QByteArray(1, data.at(handshakeIndex));
+    pendingXyModemTimer_.stop();
+    pendingXyModemDialogScheduled_ = true;
+    QTimer::singleShot(
+            0,
+            this,
+            &BaseTerminal::startPendingXyModemTransfer);
+}
+
+void BaseTerminal::clearPendingXyModemCommand() {
+    pendingXyModemTimer_.stop();
+    if (pendingXyModemDialogScheduled_ && xyModemFileDialog_ != nullptr) {
+        xyModemFileDialog_->reject();
+    }
+    pendingXyModemCommand_ = XyModemCommand::None;
+    pendingXyModemOutput_.clear();
+    pendingXyModemProtocolData_.clear();
+    pendingXyModemDialogScheduled_ = false;
 }
 
 void BaseTerminal::onZmodemDetected(
@@ -419,31 +543,12 @@ void BaseTerminal::closeZmodemProgress() {
 
 void BaseTerminal::startXyModemSend(
         const XyModemTransfer::Protocol protocol) {
-    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
+    if (!isConnect() || pendingXyModemCommand_ != XyModemCommand::None || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
         return;
     }
 
-    const QString initialDirectory =
-            xyModemDirectory_.isEmpty()
-                    ? QDir::homePath()
-                    : xyModemDirectory_;
-    QStringList files;
-    if (protocol == XyModemTransfer::Protocol::Xmodem) {
-        const QString file = QFileDialog::getOpenFileName(
-                this,
-                tr("选择要通过 XMODEM 发送的文件"),
-                initialDirectory,
-                tr("所有文件 (*)"));
-        if (!file.isEmpty()) {
-            files.append(file);
-        }
-    } else {
-        files = QFileDialog::getOpenFileNames(
-                this,
-                tr("选择要通过 YMODEM 发送的文件"),
-                initialDirectory,
-                tr("所有文件 (*)"));
-    }
+    const QStringList files =
+            selectXyModemSendFiles(protocol);
     if (files.isEmpty()) {
         return;
     }
@@ -453,44 +558,155 @@ void BaseTerminal::startXyModemSend(
     xyModemTransfer_->send(protocol, files);
 }
 
-void BaseTerminal::startXyModemReceive(
+QStringList BaseTerminal::selectXyModemSendFiles(
         const XyModemTransfer::Protocol protocol) {
-    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
-        return;
-    }
-
     const QString initialDirectory =
             xyModemDirectory_.isEmpty()
                     ? QDir::homePath()
                     : xyModemDirectory_;
+    QFileDialog dialog(
+            this,
+            protocol == XyModemTransfer::Protocol::Xmodem
+                    ? tr("选择要通过 XMODEM 发送的文件")
+                    : tr("选择要通过 YMODEM 发送的文件"),
+            initialDirectory,
+            tr("所有文件 (*)"));
+    dialog.setAcceptMode(QFileDialog::AcceptOpen);
     if (protocol == XyModemTransfer::Protocol::Xmodem) {
-        const QString filePath = QFileDialog::getSaveFileName(
-                this,
-                tr("选择 XMODEM 保存文件"),
-                QDir(initialDirectory)
-                        .filePath(QStringLiteral(
-                                "xmodem-download.bin")),
-                tr("所有文件 (*)"));
-        if (filePath.isEmpty()) {
-            return;
-        }
-        xyModemDirectory_ =
-                QFileInfo(filePath).absolutePath();
-        xyModemTransfer_->receive(protocol, filePath);
+        dialog.setFileMode(QFileDialog::ExistingFile);
+    } else {
+        dialog.setFileMode(QFileDialog::ExistingFiles);
+    }
+    if (!executeXyModemFileDialog(&dialog)) {
+        return {};
+    }
+    return dialog.selectedFiles();
+}
+
+void BaseTerminal::startXyModemReceive(
+        const XyModemTransfer::Protocol protocol) {
+    if (!isConnect() || pendingXyModemCommand_ != XyModemCommand::None || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
         return;
     }
 
-    const QString directory =
-            QFileDialog::getExistingDirectory(
-                    this,
-                    tr("选择 YMODEM 下载目录"),
-                    initialDirectory,
-                    QFileDialog::ShowDirsOnly);
-    if (directory.isEmpty()) {
+    const QString destination =
+            selectXyModemReceiveDestination(protocol);
+    if (destination.isEmpty()) {
         return;
     }
-    xyModemDirectory_ = directory;
-    xyModemTransfer_->receive(protocol, directory);
+
+    xyModemDirectory_ =
+            protocol == XyModemTransfer::Protocol::Xmodem
+                    ? QFileInfo(destination).absolutePath()
+                    : destination;
+    xyModemTransfer_->receive(protocol, destination);
+}
+
+QString BaseTerminal::selectXyModemReceiveDestination(
+        const XyModemTransfer::Protocol protocol) {
+    const QString initialDirectory =
+            xyModemDirectory_.isEmpty()
+                    ? QDir::homePath()
+                    : xyModemDirectory_;
+    QFileDialog dialog(this);
+    if (protocol == XyModemTransfer::Protocol::Xmodem) {
+        dialog.setWindowTitle(
+                tr("选择 XMODEM 保存文件"));
+        dialog.setDirectory(initialDirectory);
+        dialog.selectFile(
+                QStringLiteral("xmodem-download.bin"));
+        dialog.setNameFilter(tr("所有文件 (*)"));
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        dialog.setFileMode(QFileDialog::AnyFile);
+    } else {
+        dialog.setWindowTitle(
+                tr("选择 YMODEM 下载目录"));
+        dialog.setDirectory(initialDirectory);
+        dialog.setAcceptMode(QFileDialog::AcceptOpen);
+        dialog.setFileMode(QFileDialog::Directory);
+        dialog.setOption(QFileDialog::ShowDirsOnly);
+    }
+    if (!executeXyModemFileDialog(&dialog)) {
+        return {};
+    }
+    return dialog.selectedFiles().value(0);
+}
+
+bool BaseTerminal::executeXyModemFileDialog(
+        QFileDialog *dialog) {
+    if (dialog == nullptr || xyModemFileDialog_ != nullptr) {
+        return false;
+    }
+    xyModemFileDialog_ = dialog;
+    const bool accepted =
+            dialog->exec() == QDialog::Accepted;
+    xyModemFileDialog_ = nullptr;
+    return accepted;
+}
+
+void BaseTerminal::startPendingXyModemTransfer() {
+    const XyModemCommand command =
+            pendingXyModemCommand_;
+    if (command == XyModemCommand::None) {
+        return;
+    }
+    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive()) {
+        clearPendingXyModemCommand();
+        return;
+    }
+
+    pendingXyModemTimer_.stop();
+    pendingXyModemDialogScheduled_ = true;
+    const XyModemTransfer::Protocol protocol =
+            xyModemProtocol(command);
+    if (isXyModemSendCommand(command)) {
+        const QStringList files =
+                selectXyModemSendFiles(protocol);
+        if (pendingXyModemCommand_ != command) {
+            return;
+        }
+        if (files.isEmpty()) {
+            clearPendingXyModemCommand();
+            writeToBackend(XyModem::cancelSequence());
+            return;
+        }
+
+        const QByteArray protocolData =
+                pendingXyModemProtocolData_;
+        xyModemDirectory_ =
+                QFileInfo(files.constFirst()).absolutePath();
+        clearPendingXyModemCommand();
+        xyModemTransfer_->send(protocol, files);
+        if (xyModemTransfer_->isActive()) {
+            const QByteArray terminalData =
+                    xyModemTransfer_->consume(protocolData);
+            if (!terminalData.isEmpty()) {
+                recvData(
+                        terminalData.constData(),
+                        static_cast<int>(
+                                terminalData.size()));
+            }
+        }
+        return;
+    }
+
+    const QString destination =
+            selectXyModemReceiveDestination(protocol);
+    if (pendingXyModemCommand_ != command) {
+        return;
+    }
+    if (destination.isEmpty()) {
+        clearPendingXyModemCommand();
+        writeToBackend(XyModem::cancelSequence());
+        return;
+    }
+
+    xyModemDirectory_ =
+            protocol == XyModemTransfer::Protocol::Xmodem
+                    ? QFileInfo(destination).absolutePath()
+                    : destination;
+    clearPendingXyModemCommand();
+    xyModemTransfer_->receive(protocol, destination);
 }
 
 void BaseTerminal::onXyModemFileStarted(
@@ -624,7 +840,7 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
 
     QMenu *fileTransferMenu = menu.addMenu(tr("文件传输"));
     const bool canStartFileTransfer =
-            isConnect() && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
+            isConnect() && pendingXyModemCommand_ == XyModemCommand::None && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
 
     QAction *sendXmodemAction =
             fileTransferMenu->addAction(

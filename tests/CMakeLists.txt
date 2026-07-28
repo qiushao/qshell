@@ -30,6 +30,8 @@ set_tests_properties(zmodem_transfer_test PROPERTIES
 
 add_executable(xymodem_transfer_test
         xymodem_transfer_test.cpp
+        ../src/core/xymodem/XyModemCommandDetector.cpp
+        ../src/core/xymodem/XyModemCommandDetector.h
         ../src/core/xymodem/XyModemProtocol.cpp
         ../src/core/xymodem/XyModemProtocol.h
         ../src/core/xymodem/XyModemTransfer.cpp

@@ -15,6 +15,8 @@ set(SRC_FILES main.cpp
         core/zmodem/ZmodemTransfer.h
         core/xymodem/XyModemProtocol.cpp
         core/xymodem/XyModemProtocol.h
+        core/xymodem/XyModemCommandDetector.cpp
+        core/xymodem/XyModemCommandDetector.h
         core/xymodem/XyModemTransfer.cpp
         core/xymodem/XyModemTransfer.h
         ui/session/CollapsibleDockWidget.cpp
