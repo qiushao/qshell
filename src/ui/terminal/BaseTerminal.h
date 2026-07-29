@@ -6,6 +6,7 @@
 #include "core/zmodem/ZmodemTransfer.h"
 #include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemTransfer.h"
+#include <QElapsedTimer>
 #include <QFile>
 #include <QMenu>
 #include <QColorDialog>
@@ -118,6 +119,9 @@ private:
     QString xyModemDirectory_;
     ZmodemTransfer *zmodemTransfer_ = nullptr;
     QProgressDialog *zmodemProgress_ = nullptr;
+    QString zmodemProgressLabel_;
+    QElapsedTimer zmodemRateTimer_;
+    qint64 zmodemRateTransferred_ = 0;
     QString zmodemDirectory_;
 };
 

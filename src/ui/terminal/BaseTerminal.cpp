@@ -17,12 +17,80 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
 constexpr int pendingSendTimeoutMilliseconds = 5000;
 constexpr int pendingReceiveDelayMilliseconds = 300;
 constexpr qsizetype maximumPendingOutputSize = 4096;
+constexpr qint64 zmodemRateUpdateIntervalMilliseconds = 500;
+constexpr double bytesPerKilobyte = 1024.0;
+constexpr double bytesPerMegabyte =
+        bytesPerKilobyte * bytesPerKilobyte;
+constexpr double bytesPerGigabyte =
+        bytesPerMegabyte * bytesPerKilobyte;
+
+QString formatTransferRate(
+        const qint64 transferred,
+        const qint64 elapsedMilliseconds) {
+    if (transferred <= 0 || elapsedMilliseconds <= 0) {
+        return QStringLiteral("0 B/s");
+    }
+
+    const double bytesPerSecond =
+            static_cast<double>(transferred) * 1000.0 / static_cast<double>(elapsedMilliseconds);
+    if (bytesPerSecond >= bytesPerGigabyte) {
+        return QStringLiteral("%1 GB/s")
+                .arg(bytesPerSecond / bytesPerGigabyte,
+                     0,
+                     'f',
+                     1);
+    }
+    if (bytesPerSecond >= bytesPerMegabyte) {
+        return QStringLiteral("%1 MB/s")
+                .arg(bytesPerSecond / bytesPerMegabyte,
+                     0,
+                     'f',
+                     1);
+    }
+    if (bytesPerSecond >= bytesPerKilobyte) {
+        return QStringLiteral("%1 KB/s")
+                .arg(bytesPerSecond / bytesPerKilobyte,
+                     0,
+                     'f',
+                     1);
+    }
+    return QStringLiteral("%1 B/s")
+            .arg(bytesPerSecond, 0, 'f', 0);
+}
+
+QString formatRemainingTime(
+        const qint64 remaining,
+        const qint64 transferred,
+        const qint64 elapsedMilliseconds) {
+    if (remaining <= 0) {
+        return QStringLiteral("00:00:00");
+    }
+    if (transferred <= 0 || elapsedMilliseconds <= 0) {
+        return QStringLiteral("--");
+    }
+
+    const double bytesPerSecond =
+            static_cast<double>(transferred) * 1000.0 / static_cast<double>(elapsedMilliseconds);
+    const qint64 remainingSeconds =
+            std::max<qint64>(
+                    1,
+                    static_cast<qint64>(
+                            std::ceil(static_cast<double>(remaining) / bytesPerSecond)));
+    const qint64 hours = remainingSeconds / 3600;
+    const qint64 minutes = (remainingSeconds % 3600) / 60;
+    const qint64 seconds = remainingSeconds % 60;
+    return QStringLiteral("%1:%2:%3")
+            .arg(hours, 2, 10, QLatin1Char('0'))
+            .arg(minutes, 2, 10, QLatin1Char('0'))
+            .arg(seconds, 2, 10, QLatin1Char('0'));
+}
 
 QString xyModemName(const XyModemTransfer::Protocol protocol) {
     return protocol == XyModemTransfer::Protocol::Xmodem
@@ -491,13 +559,20 @@ void BaseTerminal::onZmodemFileStarted(
             direction == ZmodemTransfer::Direction::Download
                     ? tr("正在下载")
                     : tr("正在上传");
-    zmodemProgress_ = new QProgressDialog(this);
-    zmodemProgress_->setWindowTitle(tr("ZMODEM 文件传输"));
-    zmodemProgress_->setLabelText(
+    zmodemProgressLabel_ =
             tr("%1 %2（%3/%4）")
                     .arg(action, fileName)
                     .arg(fileNumber)
-                    .arg(fileCount));
+                    .arg(fileCount);
+    zmodemRateTransferred_ = 0;
+    zmodemRateTimer_.start();
+    zmodemProgress_ = new QProgressDialog(this);
+    zmodemProgress_->setWindowTitle(tr("ZMODEM 文件传输"));
+    zmodemProgress_->setLabelText(
+            tr("%1\n传输速率：%2\n预计剩余时间：%3")
+                    .arg(zmodemProgressLabel_,
+                         QStringLiteral("--"),
+                         QStringLiteral("--")));
     zmodemProgress_->setCancelButtonText(tr("取消"));
     zmodemProgress_->setRange(0, size == 0 ? 0 : 1000);
     zmodemProgress_->setValue(0);
@@ -518,6 +593,39 @@ void BaseTerminal::onZmodemFileProgress(
     if (zmodemProgress_ == nullptr) {
         return;
     }
+
+    const qint64 elapsedMilliseconds =
+            zmodemRateTimer_.elapsed();
+    const bool fileComplete =
+            size > 0 && transferred >= size;
+    const bool hasNewCompletedBytes =
+            fileComplete && transferred > zmodemRateTransferred_;
+    if (elapsedMilliseconds > 0 && (elapsedMilliseconds >= zmodemRateUpdateIntervalMilliseconds || hasNewCompletedBytes)) {
+        const qint64 transferredSinceUpdate =
+                std::max<qint64>(
+                        0,
+                        transferred - zmodemRateTransferred_);
+        const qint64 remaining =
+                size > 0
+                        ? size - std::clamp<qint64>(
+                                         transferred,
+                                         0,
+                                         size)
+                        : -1;
+        zmodemProgress_->setLabelText(
+                tr("%1\n传输速率：%2\n预计剩余时间：%3")
+                        .arg(zmodemProgressLabel_,
+                             formatTransferRate(
+                                     transferredSinceUpdate,
+                                     elapsedMilliseconds),
+                             formatRemainingTime(
+                                     remaining,
+                                     transferredSinceUpdate,
+                                     elapsedMilliseconds)));
+        zmodemRateTransferred_ = transferred;
+        zmodemRateTimer_.restart();
+    }
+
     if (size <= 0) {
         zmodemProgress_->setRange(0, 0);
         return;
@@ -539,6 +647,9 @@ void BaseTerminal::closeZmodemProgress() {
     zmodemProgress_->close();
     zmodemProgress_->deleteLater();
     zmodemProgress_ = nullptr;
+    zmodemProgressLabel_.clear();
+    zmodemRateTimer_.invalidate();
+    zmodemRateTransferred_ = 0;
 }
 
 void BaseTerminal::startXyModemSend(
