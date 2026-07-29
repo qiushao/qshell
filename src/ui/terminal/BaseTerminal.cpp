@@ -2,17 +2,19 @@
 
 #include "core/ConfigManager.h"
 #include "ptyqt.h"
+#include <QColorDialog>
+#include <QContextMenuEvent>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
-#include <QProcess>
-#include <QContextMenuEvent>
-#include <QMenu>
 #include <QFileDialog>
+#include <QFocusEvent>
+#include <QMenu>
 #include <QMessageBox>
-#include <QDateTime>
-#include <QColorDialog>
+#include <QProcess>
 #include <QProgressDialog>
 #include <QRandomGenerator>
+#include <QSplitter>
 #include <QTextStream>
 #include <QTimer>
 
@@ -263,8 +265,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     QObject::connect(zmodemTransfer_, &ZmodemTransfer::fileProgress,
                      this, &BaseTerminal::onZmodemFileProgress);
     QObject::connect(zmodemTransfer_, &ZmodemTransfer::transferFinished,
-                     this, [this](ZmodemTransfer::Direction direction,
-                                  int fileCount) {
+                     this, [this](ZmodemTransfer::Direction direction, int fileCount) {
                          closeZmodemProgress();
                          QTimer::singleShot(0, this, [this, direction, fileCount]() {
                              const QString action =
@@ -284,8 +285,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
                          closeZmodemProgress();
                      });
     QObject::connect(zmodemTransfer_, &ZmodemTransfer::transferFailed,
-                     this, [this](ZmodemTransfer::Direction,
-                                  const QString &message) {
+                     this, [this](ZmodemTransfer::Direction, const QString &message) {
                          closeZmodemProgress();
                          QTimer::singleShot(0, this, [this, message]() {
                              QMessageBox::warning(this,
@@ -336,13 +336,12 @@ void BaseTerminal::startLocalShell() {
 
     // 启动进程
     bool ret = localShell_->startProcess(
-        shellPath,
-        args,
-        QDir::homePath(),
-        envs,
-        static_cast<qint16>(screenColumnsCount()),
-        static_cast<qint16>(screenLinesCount())
-    );
+            shellPath,
+            args,
+            QDir::homePath(),
+            envs,
+            static_cast<qint16>(screenColumnsCount()),
+            static_cast<qint16>(screenLinesCount()));
 
     if (!ret) {
         qWarning() << "startProcess failed:" << localShell_->lastError();
@@ -350,7 +349,7 @@ void BaseTerminal::startLocalShell() {
     }
 
     // 连接 notifier（如果可用）
-    if (QIODevice* notifier = localShell_->notifier()) {
+    if (QIODevice *notifier = localShell_->notifier()) {
         QObject::connect(notifier, &QIODevice::readyRead, this, [this]() {
             QByteArray data = localShell_->readAll();
             if (!data.isEmpty()) {
@@ -426,8 +425,7 @@ void BaseTerminal::displayBackendData(
 
 bool BaseTerminal::prepareZmodemUpload(
         const QStringList &filePaths) {
-    if (!isConnect() || zmodemTransfer_->isActive()
-        || filePaths.isEmpty()) {
+    if (!isConnect() || zmodemTransfer_->isActive() || filePaths.isEmpty()) {
         return false;
     }
 
@@ -545,8 +543,7 @@ void BaseTerminal::clearPendingXyModemCommand() {
 
 void BaseTerminal::onZmodemDetected(
         ZmodemTransfer::Direction direction) {
-    if (!zmodemTransfer_->isActive()
-        || zmodemTransfer_->direction() != direction) {
+    if (!zmodemTransfer_->isActive() || zmodemTransfer_->direction() != direction) {
         return;
     }
 
@@ -1026,6 +1023,8 @@ void BaseTerminal::populateFileTransferMenu(QMenu *menu) {
 }
 
 void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
+    emit activated(this);
+
     QMenu menu(this);
 
     // 复制操作
@@ -1042,6 +1041,34 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
     QObject::connect(pasteAction, &QAction::triggered, this, [this]() {
         pasteClipboard();
     });
+
+    menu.addSeparator();
+
+    QMenu *splitMenu = menu.addMenu(tr("分屏"));
+    QAction *splitLeftRightAction = splitMenu->addAction(tr("左右分屏"));
+    QObject::connect(splitLeftRightAction, &QAction::triggered, this, [this]() {
+        emit splitRequested(this, Qt::Horizontal);
+    });
+
+    QAction *splitTopBottomAction = splitMenu->addAction(tr("上下分屏"));
+    QObject::connect(splitTopBottomAction, &QAction::triggered, this, [this]() {
+        emit splitRequested(this, Qt::Vertical);
+    });
+
+    const QVariant splitActionsEnabled = property("splitActionsEnabled");
+    const bool canChangeSplit =
+            !splitActionsEnabled.isValid() || splitActionsEnabled.toBool();
+    splitLeftRightAction->setEnabled(canChangeSplit);
+    splitTopBottomAction->setEnabled(canChangeSplit);
+
+    if (qobject_cast<QSplitter *>(parentWidget()) != nullptr) {
+        splitMenu->addSeparator();
+        QAction *closeSplitAction = splitMenu->addAction(tr("关闭当前分屏"));
+        closeSplitAction->setEnabled(canChangeSplit);
+        QObject::connect(closeSplitAction, &QAction::triggered, this, [this]() {
+            emit closeSplitRequested(this);
+        });
+    }
 
     menu.addSeparator();
 
@@ -1084,6 +1111,11 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
     });
 
     menu.exec(event->globalPos());
+}
+
+void BaseTerminal::focusInEvent(QFocusEvent *event) {
+    QTermWidget::focusInEvent(event);
+    emit activated(this);
 }
 
 void BaseTerminal::buildHighlightMenu(QMenu *parentMenu) {
@@ -1191,8 +1223,8 @@ void BaseTerminal::buildHighlightMenu(QMenu *parentMenu) {
 QColor BaseTerminal::generateRandomColor() {
     // 生成饱和度和亮度较高的随机颜色，确保可见性好
     int hue = QRandomGenerator::global()->bounded(360);
-    int saturation = 150 + QRandomGenerator::global()->bounded(106);  // 150-255
-    int value = 180 + QRandomGenerator::global()->bounded(76);        // 180-255
+    int saturation = 150 + QRandomGenerator::global()->bounded(106);// 150-255
+    int value = 180 + QRandomGenerator::global()->bounded(76);      // 180-255
     return QColor::fromHsv(hue, saturation, value);
 }
 
@@ -1201,34 +1233,34 @@ void BaseTerminal::onToggleLogging(bool includeBufferedLogs) {
         // 停止日志记录
         stopLogging();
         QMessageBox::information(this, tr("日志保存"),
-            tr("日志保存已停止。\n文件: %1").arg(logFilePath_));
+                                 tr("日志保存已停止。\n文件: %1").arg(logFilePath_));
     } else {
         // 开始日志记录 - 打开文件选择对话框
         QString defaultFileName = QString("terminal_log_%1.log")
-            .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+                                          .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
 
         QString filePath = QFileDialog::getSaveFileName(
-            this,
-            tr("保存终端日志"),
-            QDir::homePath() + "/" + defaultFileName,
-            tr("日志文件 (*.log *.txt);;所有文件 (*)"),
-            nullptr,
-            QFileDialog::DontConfirmOverwrite  // 允许选择现有文件
+                this,
+                tr("保存终端日志"),
+                QDir::homePath() + "/" + defaultFileName,
+                tr("日志文件 (*.log *.txt);;所有文件 (*)"),
+                nullptr,
+                QFileDialog::DontConfirmOverwrite// 允许选择现有文件
         );
 
         if (!filePath.isEmpty()) {
             // 如果文件已存在，询问是追加还是覆盖
             if (QFile::exists(filePath)) {
                 QMessageBox::StandardButton reply = QMessageBox::question(
-                    this,
-                    tr("文件已存在"),
-                    tr("文件 \"%1\" 已存在。\n\n"
-                       "点击\"是\"追加到现有文件\n"
-                       "点击\"否\"覆盖现有文件\n"
-                       "点击\"取消\"放弃操作").arg(QFileInfo(filePath).fileName()),
-                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
-                    QMessageBox::Yes
-                );
+                        this,
+                        tr("文件已存在"),
+                        tr("文件 \"%1\" 已存在。\n\n"
+                           "点击\"是\"追加到现有文件\n"
+                           "点击\"否\"覆盖现有文件\n"
+                           "点击\"取消\"放弃操作")
+                                .arg(QFileInfo(filePath).fileName()),
+                        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+                        QMessageBox::Yes);
 
                 if (reply == QMessageBox::Cancel) {
                     return;
@@ -1244,7 +1276,7 @@ void BaseTerminal::onToggleLogging(bool includeBufferedLogs) {
 
             if (logging_) {
                 QMessageBox::information(this, tr("日志保存"),
-                    tr("开始保存日志到:\n%1").arg(filePath));
+                                         tr("开始保存日志到:\n%1").arg(filePath));
             }
         }
     }
@@ -1260,9 +1292,9 @@ void BaseTerminal::startLogging(const QString &filePath, bool includeBufferedLog
     // 以追加模式打开（如果用户选择覆盖，文件已被删除）
     if (!logFile_->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         QMessageBox::critical(this, tr("错误"),
-            tr("无法打开文件进行写入:\n%1\n\n错误: %2")
-                .arg(filePath)
-                .arg(logFile_->errorString()));
+                              tr("无法打开文件进行写入:\n%1\n\n错误: %2")
+                                      .arg(filePath)
+                                      .arg(logFile_->errorString()));
         delete logFile_;
         logFile_ = nullptr;
         return;
@@ -1273,7 +1305,7 @@ void BaseTerminal::startLogging(const QString &filePath, bool includeBufferedLog
 
     // 写入日志头
     QString header = QString("\n========== 日志开始: %1 ==========\n")
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
+                             .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
     logFile_->write(header.toUtf8());
 
     if (includeBufferedLogs) {
@@ -1309,7 +1341,7 @@ void BaseTerminal::stopLogging() {
 
     // 写入日志尾
     QString footer = QString("\n========== 日志结束: %1 ==========\n")
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
+                             .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss"));
     logFile_->write(footer.toUtf8());
     logFile_->flush();
 
@@ -1338,7 +1370,7 @@ void BaseTerminal::writeToLog(const QString &line) {
 
     // 定期刷新确保数据写入磁盘
     static int writeCount = 0;
-    if (++writeCount >= 10) {  // 每10次写入刷新一次
+    if (++writeCount >= 10) {// 每10次写入刷新一次
         logFile_->flush();
         writeCount = 0;
     }

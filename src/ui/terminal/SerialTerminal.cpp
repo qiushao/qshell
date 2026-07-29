@@ -1,7 +1,7 @@
+#include "SerialTerminal.h"
 #include "qtermwidget.h"
 #include <QDebug>
 #include <QtWidgets/QMessageBox>
-#include "SerialTerminal.h"
 
 SerialTerminal::SerialTerminal(const SessionData &session, QWidget *parent) : BaseTerminal(parent) {
     sessionData_ = session;
@@ -29,13 +29,12 @@ void SerialTerminal::connect() {
     serial_->setParity(static_cast<QSerialPort::Parity>(sessionData_.serialConfig.parity));
     serial_->setStopBits(static_cast<QSerialPort::StopBits>(sessionData_.serialConfig.stopBits));
     serial_->setFlowControl(static_cast<QSerialPort::FlowControl>(sessionData_.serialConfig.flowControl));
-    if (serial_->open(QIODevice::ReadWrite)) {
+    connect_ = serial_->open(QIODevice::ReadWrite);
+    if (connect_) {
         qDebug() << "open serial " << sessionData_.name << " sucess";
     } else {
         QMessageBox::critical(this, tr("Error"), serial_->errorString());
     }
-
-    connect_ = true;
 }
 
 void SerialTerminal::disconnect() {

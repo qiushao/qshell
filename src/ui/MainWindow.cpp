@@ -20,16 +20,144 @@
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
+#include <QFrame>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSettings>
+#include <QSignalBlocker>
+#include <QSplitter>
 #include <QThread>
+#include <QTimer>
+#include <QVBoxLayout>
 #include <utility>
 
 #if defined(Q_OS_WIN)
 #include <qt_windows.h>
 #endif
+
+namespace {
+
+QList<BaseTerminal *> terminalsInWidget(QWidget *widget) {
+    if (widget == nullptr) {
+        return {};
+    }
+
+    QList<BaseTerminal *> terminals =
+            widget->findChildren<BaseTerminal *>();
+    if (auto *terminal = qobject_cast<BaseTerminal *>(widget)) {
+        terminals.prepend(terminal);
+    }
+    return terminals;
+}
+
+BaseTerminal *firstTerminalInWidget(QWidget *widget) {
+    const QList<BaseTerminal *> terminals = terminalsInWidget(widget);
+    return terminals.isEmpty() ? nullptr : terminals.first();
+}
+
+BaseTerminal *activeTerminalInWidget(QWidget *widget) {
+    const QList<BaseTerminal *> terminals = terminalsInWidget(widget);
+    for (BaseTerminal *terminal: terminals) {
+        if (terminal->property("activeSplitPane").toBool()) {
+            return terminal;
+        }
+    }
+    return terminals.isEmpty() ? nullptr : terminals.first();
+}
+
+bool containsTerminal(QWidget *widget, BaseTerminal *terminal) {
+    return widget != nullptr && terminal != nullptr && (widget == terminal || widget->isAncestorOf(terminal));
+}
+
+bool containsWidget(QWidget *root, QWidget *widget) {
+    return root != nullptr && widget != nullptr &&
+           (root == widget || root->isAncestorOf(widget));
+}
+
+bool isEmptySplitPane(QWidget *widget) {
+    return widget != nullptr &&
+           widget->property("emptySplitPane").toBool();
+}
+
+QWidget *firstEmptySplitPaneInWidget(QWidget *widget) {
+    if (isEmptySplitPane(widget)) {
+        return widget;
+    }
+    if (widget == nullptr) {
+        return nullptr;
+    }
+
+    const QList<QWidget *> children = widget->findChildren<QWidget *>();
+    for (QWidget *child: children) {
+        if (isEmptySplitPane(child)) {
+            return child;
+        }
+    }
+    return nullptr;
+}
+
+void disconnectTerminals(QWidget *widget) {
+    const QList<BaseTerminal *> terminals = terminalsInWidget(widget);
+    for (BaseTerminal *terminal: terminals) {
+        terminal->disconnect();
+    }
+}
+
+void setSplitActionsEnabled(QWidget *widget, bool enabled) {
+    const QList<BaseTerminal *> terminals = terminalsInWidget(widget);
+    for (BaseTerminal *terminal: terminals) {
+        terminal->setProperty("splitActionsEnabled", enabled);
+    }
+}
+
+QSplitter *createTerminalSplitter(Qt::Orientation orientation) {
+    auto *splitter = new QSplitter(orientation);
+    splitter->setChildrenCollapsible(false);
+    splitter->setHandleWidth(5);
+    splitter->setOpaqueResize(true);
+    return splitter;
+}
+
+void setEqualSplitterSizes(QSplitter *splitter) {
+    if (splitter == nullptr || splitter->count() == 0) {
+        return;
+    }
+
+    int availableSize = 0;
+    const QList<int> currentSizes = splitter->sizes();
+    for (const int size: currentSizes) {
+        availableSize += size;
+    }
+    if (availableSize <= 0) {
+        const int extent =
+                splitter->orientation() == Qt::Horizontal
+                        ? splitter->width()
+                        : splitter->height();
+        availableSize =
+                extent - splitter->handleWidth() *
+                                 (splitter->count() - 1);
+    }
+    if (availableSize <= 0) {
+        return;
+    }
+
+    QList<int> equalSizes;
+    const int baseSize = availableSize / splitter->count();
+    int remainingSize = availableSize;
+    for (int index = 0; index < splitter->count(); ++index) {
+        const int size =
+                index == splitter->count() - 1
+                        ? remainingSize
+                        : baseSize;
+        equalSizes.append(size);
+        remainingSize -= size;
+    }
+    splitter->setSizes(equalSizes);
+}
+
+}// namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent) {
@@ -106,6 +234,16 @@ void MainWindow::initTableWidget() {
 
     connect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
     connect(tabWidget_, &QTabWidget::tabCloseRequested, this, &MainWindow::onTabCloseRequested);
+    connect(tabWidget_, &SessionTabWidget::splitRequested,
+            this, &MainWindow::onTabSplitRequested);
+    connect(qApp, &QApplication::focusChanged,
+            this, [this](QWidget *, QWidget *focusedWidget) {
+                BaseTerminal *terminal =
+                        terminalForWidget(focusedWidget);
+                if (terminal != nullptr) {
+                    onTerminalActivated(terminal);
+                }
+            });
 }
 
 void MainWindow::showEvent(QShowEvent *event) {
@@ -136,13 +274,18 @@ void MainWindow::onOpenSession(const QString &sessionId) {
     openSessionById(sessionId);
 }
 
-void MainWindow::onSessionError(BaseTerminal *terminal) const {
-    if (terminal == currentTab_) {
-        onDisconnectAction();
-    } else {
-        int index = tabWidget_->indexOf(terminal);
-        terminal->disconnect();
+void MainWindow::onSessionError(BaseTerminal *terminal) {
+    if (terminal == nullptr) {
+        return;
+    }
+
+    terminal->disconnect();
+    const int index = tabIndexForTerminal(terminal);
+    if (index >= 0) {
         tabWidget_->setTabIcon(index, *disconnectStateIcon_);
+    }
+    if (terminal == currentTab_) {
+        setCurrentTerminal(terminal);
     }
 }
 
@@ -247,28 +390,63 @@ void MainWindow::restoreLayoutState() {
 }
 
 void MainWindow::onTabChanged(int index) {
-    // qDebug() << "onTabChanged, index = " << index;
-
     if (index < 0) {
-        currentTab_ = nullptr;
+        setCurrentTerminal(nullptr);
         return;
     }
 
-    currentTab_ = dynamic_cast<BaseTerminal *>(tabWidget_->widget(index));
+    QWidget *root = tabWidget_->widget(index);
+    if (activeEmptySplitPane_ != nullptr) {
+        if (containsWidget(root, activeEmptySplitPane_)) {
+            setCurrentTerminal(nullptr);
+            return;
+        }
+        setActiveEmptySplitPane(nullptr);
+    }
+
+    BaseTerminal *focusedTerminal =
+            terminalForWidget(QApplication::focusWidget());
+    if (!containsTerminal(root, focusedTerminal)) {
+        focusedTerminal = activeTerminalInWidget(root);
+    }
+    setCurrentTerminal(focusedTerminal);
 }
 
-void MainWindow::onTabCloseRequested(int index) const {
+void MainWindow::onTabCloseRequested(int index) {
     if (index < 0 || index >= tabWidget_->count()) {
         return;
     }
 
     QWidget *widget = tabWidget_->widget(index);
-    auto *tab = dynamic_cast<BaseTerminal *>(widget);
-    if (tab != nullptr) {
-        tab->disconnect();
+    if (containsWidget(widget, activeEmptySplitPane_)) {
+        setActiveEmptySplitPane(nullptr);
     }
+    if (containsTerminal(widget, currentTab_)) {
+        currentTab_ = nullptr;
+    }
+    disconnectTerminals(widget);
     tabWidget_->removeTab(index);
     delete widget;
+
+    if (tabWidget_->count() == 0) {
+        setCurrentTerminal(nullptr);
+    } else {
+        onTabChanged(tabWidget_->currentIndex());
+    }
+}
+
+void MainWindow::onTabSplitRequested(int index,
+                                     Qt::Orientation orientation) {
+    if (index < 0 || index >= tabWidget_->count()) {
+        return;
+    }
+
+    QWidget *root = tabWidget_->widget(index);
+    BaseTerminal *terminal = currentTab_;
+    if (!containsTerminal(root, terminal)) {
+        terminal = activeTerminalInWidget(root);
+    }
+    onSplitRequested(terminal, orientation);
 }
 
 void MainWindow::onCommandSend(const QString &command) {
@@ -426,7 +604,7 @@ void MainWindow::initToolbar() {
     toolBar_->addAction(findAction_);
     toolBar_->addAction(clearScreenAction_);
     // 添加弹性空白，将后面的控件推到右边
-    auto* spacer = new QWidget(this);
+    auto *spacer = new QWidget(this);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolBar_->addWidget(spacer);
     toolBar_->addAction(fullscreenAction_);
@@ -531,10 +709,10 @@ void MainWindow::onDisconnectAction() const {
 
 void MainWindow::onExitAction() {
     for (int i = 0; i < tabWidget_->count(); ++i) {
-        auto *terminal = dynamic_cast<BaseTerminal *>(tabWidget_->widget(i));
-        if (terminal != nullptr) {
-            terminal->disconnect();
-        }
+        disconnectTerminals(tabWidget_->widget(i));
+    }
+    if (isFullscreen_ && fullscreenWidget_ != nullptr) {
+        disconnectTerminals(fullscreenWidget_);
     }
     QApplication::exit(0);
 }
@@ -624,6 +802,395 @@ BaseTerminal *MainWindow::terminalForWidget(QWidget *widget) {
     return nullptr;
 }
 
+BaseTerminal *MainWindow::createTerminal(const SessionData &session,
+                                         QWidget *parent) {
+    if (session.protocolType == ProtocolType::Serial) {
+        return new SerialTerminal(session, parent);
+    }
+    if (session.protocolType == ProtocolType::LocalShell) {
+        return new LocalTerminal(session, parent);
+    }
+    if (session.protocolType == ProtocolType::SSH) {
+        return new SSHTerminal(session, parent);
+    }
+    return nullptr;
+}
+
+QWidget *MainWindow::createEmptySplitPane() {
+    auto *pane = new QFrame(this);
+    pane->setProperty("emptySplitPane", true);
+    pane->setProperty("selected", false);
+    pane->setFocusPolicy(Qt::ClickFocus);
+    pane->setContextMenuPolicy(Qt::CustomContextMenu);
+    pane->setStyleSheet(
+            "QFrame[emptySplitPane=\"true\"] {"
+            "  background-color: palette(base);"
+            "  border: 2px dashed palette(mid);"
+            "}"
+            "QFrame[emptySplitPane=\"true\"][selected=\"true\"] {"
+            "  border: 2px solid palette(highlight);"
+            "}");
+
+    auto *layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(24, 24, 24, 24);
+    auto *label = new QLabel(
+            tr("空分屏\n\n请选中此区域，然后从会话列表打开会话"),
+            pane);
+    label->setAlignment(Qt::AlignCenter);
+    label->setWordWrap(true);
+    label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    label->setStyleSheet("color: palette(mid); border: none;");
+    layout->addWidget(label);
+
+    pane->installEventFilter(this);
+    QObject::connect(
+            pane, &QWidget::customContextMenuRequested,
+            this, [this, pane](const QPoint &pos) {
+                setActiveEmptySplitPane(pane);
+                QMenu menu(pane);
+                QAction *closeAction =
+                        menu.addAction(tr("关闭当前分屏"));
+                closeAction->setEnabled(!isFullscreen_);
+                QObject::connect(
+                        closeAction, &QAction::triggered,
+                        this, [this, pane]() {
+                            closeSplitPane(pane);
+                        });
+                menu.exec(pane->mapToGlobal(pos));
+            });
+    return pane;
+}
+
+void MainWindow::setupTerminal(BaseTerminal *terminal) const {
+    if (terminal == nullptr) {
+        return;
+    }
+
+    QObject::connect(terminal, &BaseTerminal::onSessionError,
+                     this, &MainWindow::onSessionError);
+    QObject::connect(terminal, &BaseTerminal::activated,
+                     this, &MainWindow::onTerminalActivated);
+    QObject::connect(terminal, &BaseTerminal::splitRequested,
+                     this, &MainWindow::onSplitRequested);
+    QObject::connect(terminal, &BaseTerminal::closeSplitRequested,
+                     this, &MainWindow::onCloseSplitRequested);
+}
+
+void MainWindow::setCurrentTerminal(BaseTerminal *terminal) {
+    currentTab_ = terminal;
+
+    const bool connected = terminal != nullptr && terminal->isConnect();
+    connectAction_->setEnabled(terminal != nullptr && !connected);
+    disConnectAction_->setEnabled(connected);
+
+    QWidget *root = tabRootForTerminal(terminal);
+    if (root != nullptr) {
+        const QList<BaseTerminal *> terminals = terminalsInWidget(root);
+        for (BaseTerminal *candidate: terminals) {
+            candidate->setProperty("activeSplitPane",
+                                   candidate == terminal);
+        }
+    }
+
+    const int index = root == nullptr ? -1 : tabWidget_->indexOf(root);
+    if (index >= 0) {
+        tabWidget_->setTabIcon(
+                index,
+                connected ? *connectStateIcon_ : *disconnectStateIcon_);
+    }
+}
+
+void MainWindow::setActiveEmptySplitPane(QWidget *pane) {
+    if (pane != nullptr && !isEmptySplitPane(pane)) {
+        return;
+    }
+
+    QWidget *previousPane = activeEmptySplitPane_;
+    if (previousPane == pane) {
+        if (pane != nullptr) {
+            setCurrentTerminal(nullptr);
+        }
+        return;
+    }
+
+    auto refreshStyle = [](QWidget *widget, bool selected) {
+        if (widget == nullptr) {
+            return;
+        }
+        widget->setProperty("selected", selected);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    };
+
+    refreshStyle(previousPane, false);
+    activeEmptySplitPane_ = pane;
+    refreshStyle(pane, true);
+    if (pane != nullptr) {
+        const int index = tabIndexForWidget(pane);
+        if (index >= 0 && tabWidget_->currentIndex() != index) {
+            tabWidget_->setCurrentIndex(index);
+        }
+        setCurrentTerminal(nullptr);
+    }
+}
+
+bool MainWindow::fillActiveEmptySplitPane(BaseTerminal *terminal) {
+    QWidget *pane = activeEmptySplitPane_;
+    if (terminal == nullptr || !isEmptySplitPane(pane)) {
+        return false;
+    }
+
+    auto *splitter =
+            qobject_cast<QSplitter *>(pane->parentWidget());
+    if (splitter == nullptr) {
+        const int tabIndex = tabIndexForWidget(pane);
+        if (tabIndex < 0 || tabWidget_->widget(tabIndex) != pane) {
+            return false;
+        }
+
+        QSignalBlocker blocker(tabWidget_);
+        tabWidget_->removeTab(tabIndex);
+        setActiveEmptySplitPane(nullptr);
+        pane->deleteLater();
+        tabWidget_->insertTab(
+                tabIndex, terminal, *disconnectStateIcon_,
+                terminal->getSessionName());
+        tabWidget_->setCurrentIndex(tabIndex);
+        terminal->show();
+        return true;
+    }
+
+    const int paneIndex = splitter->indexOf(pane);
+    if (paneIndex < 0) {
+        return false;
+    }
+
+    const QList<int> sizes = splitter->sizes();
+    QWidget *replaced =
+            splitter->replaceWidget(paneIndex, terminal);
+    if (replaced != pane) {
+        return false;
+    }
+
+    splitter->setStretchFactor(paneIndex, 1);
+    splitter->setSizes(sizes);
+    terminal->show();
+    setActiveEmptySplitPane(nullptr);
+    replaced->deleteLater();
+    QTimer::singleShot(0, splitter, [splitter, sizes]() {
+        splitter->setSizes(sizes);
+    });
+    return true;
+}
+
+QWidget *MainWindow::tabRootForWidget(QWidget *widget) const {
+    while (widget != nullptr) {
+        if (tabWidget_->indexOf(widget) >= 0) {
+            return widget;
+        }
+        widget = widget->parentWidget();
+    }
+    return nullptr;
+}
+
+int MainWindow::tabIndexForWidget(QWidget *widget) const {
+    QWidget *root = tabRootForWidget(widget);
+    return root == nullptr ? -1 : tabWidget_->indexOf(root);
+}
+
+QWidget *MainWindow::tabRootForTerminal(BaseTerminal *terminal) const {
+    return tabRootForWidget(terminal);
+}
+
+int MainWindow::tabIndexForTerminal(BaseTerminal *terminal) const {
+    return tabIndexForWidget(terminal);
+}
+
+void MainWindow::onTerminalActivated(BaseTerminal *terminal) {
+    if (terminal == nullptr) {
+        return;
+    }
+
+    setActiveEmptySplitPane(nullptr);
+    const int index = tabIndexForTerminal(terminal);
+    if (index >= 0 && tabWidget_->currentIndex() != index) {
+        tabWidget_->setCurrentIndex(index);
+    }
+    setCurrentTerminal(terminal);
+}
+
+void MainWindow::onSplitRequested(BaseTerminal *terminal,
+                                  Qt::Orientation orientation) {
+    if (terminal == nullptr || isFullscreen_) {
+        return;
+    }
+
+    QWidget *root = tabRootForTerminal(terminal);
+    const int tabIndex = root == nullptr ? -1 : tabWidget_->indexOf(root);
+    if (tabIndex < 0) {
+        return;
+    }
+
+    QWidget *emptyPane = createEmptySplitPane();
+    QSplitter *splitter = createTerminalSplitter(orientation);
+    auto *parentSplitter =
+            qobject_cast<QSplitter *>(terminal->parentWidget());
+    QList<int> parentSizes;
+    int terminalIndex = -1;
+    if (parentSplitter != nullptr) {
+        parentSizes = parentSplitter->sizes();
+        terminalIndex = parentSplitter->indexOf(terminal);
+        if (terminalIndex < 0) {
+            delete splitter;
+            delete emptyPane;
+            return;
+        }
+        QWidget *replaced =
+                parentSplitter->replaceWidget(terminalIndex, splitter);
+        if (replaced != terminal) {
+            delete splitter;
+            delete emptyPane;
+            return;
+        }
+        splitter->addWidget(terminal);
+    } else {
+        const QString tabText = tabWidget_->tabText(tabIndex);
+        const QIcon tabIcon = tabWidget_->tabIcon(tabIndex);
+        QSignalBlocker blocker(tabWidget_);
+        tabWidget_->removeTab(tabIndex);
+        splitter->addWidget(terminal);
+        tabWidget_->insertTab(tabIndex, splitter, tabIcon, tabText);
+        tabWidget_->setCurrentIndex(tabIndex);
+    }
+
+    terminal->show();
+    splitter->addWidget(emptyPane);
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 1);
+    setEqualSplitterSizes(splitter);
+    if (parentSplitter != nullptr) {
+        parentSplitter->setStretchFactor(terminalIndex, 1);
+        parentSplitter->setSizes(parentSizes);
+    }
+
+    tabWidget_->setCurrentIndex(tabIndex);
+    setActiveEmptySplitPane(emptyPane);
+    emptyPane->setFocus(Qt::OtherFocusReason);
+    QTimer::singleShot(0, splitter, [splitter]() {
+        setEqualSplitterSizes(splitter);
+    });
+
+    if (parentSplitter != nullptr) {
+        QTimer::singleShot(0, parentSplitter,
+                           [parentSplitter, parentSizes]() {
+                               parentSplitter->setSizes(parentSizes);
+                           });
+    }
+}
+
+void MainWindow::closeSplitPane(QWidget *pane) {
+    if (pane == nullptr || isFullscreen_) {
+        return;
+    }
+
+    auto *splitter =
+            qobject_cast<QSplitter *>(pane->parentWidget());
+    if (splitter == nullptr) {
+        const int tabIndex = tabIndexForWidget(pane);
+        if (isEmptySplitPane(pane) && tabIndex >= 0 &&
+            tabWidget_->widget(tabIndex) == pane) {
+            setActiveEmptySplitPane(nullptr);
+            tabWidget_->removeTab(tabIndex);
+            pane->deleteLater();
+            if (tabWidget_->count() == 0) {
+                setCurrentTerminal(nullptr);
+            } else {
+                onTabChanged(tabWidget_->currentIndex());
+            }
+        }
+        return;
+    }
+    if (splitter->count() != 2) {
+        return;
+    }
+
+    const int paneIndex = splitter->indexOf(pane);
+    if (paneIndex < 0) {
+        return;
+    }
+    QWidget *survivor =
+            splitter->widget(paneIndex == 0 ? 1 : 0);
+    if (survivor == nullptr || survivor == pane) {
+        return;
+    }
+
+    if (containsWidget(pane, activeEmptySplitPane_)) {
+        setActiveEmptySplitPane(nullptr);
+    }
+    if (auto *terminal = qobject_cast<BaseTerminal *>(pane)) {
+        terminal->disconnect();
+    }
+
+    if (auto *parentSplitter =
+                qobject_cast<QSplitter *>(splitter->parentWidget())) {
+        const int splitterIndex = parentSplitter->indexOf(splitter);
+        if (splitterIndex < 0) {
+            return;
+        }
+        const QList<int> parentSizes = parentSplitter->sizes();
+        survivor->setParent(nullptr);
+        QWidget *replaced =
+                parentSplitter->replaceWidget(splitterIndex, survivor);
+        parentSplitter->setStretchFactor(splitterIndex, 1);
+        parentSplitter->setSizes(parentSizes);
+        survivor->show();
+        if (replaced != nullptr) {
+            replaced->deleteLater();
+        }
+        QTimer::singleShot(0, parentSplitter,
+                           [parentSplitter, parentSizes]() {
+                               parentSplitter->setSizes(parentSizes);
+                           });
+    } else {
+        const int tabIndex = tabWidget_->indexOf(splitter);
+        if (tabIndex < 0) {
+            return;
+        }
+
+        const QString tabText = tabWidget_->tabText(tabIndex);
+        const QIcon tabIcon = tabWidget_->tabIcon(tabIndex);
+        QSignalBlocker blocker(tabWidget_);
+        tabWidget_->removeTab(tabIndex);
+        survivor->setParent(nullptr);
+        splitter->deleteLater();
+        tabWidget_->insertTab(tabIndex, survivor, tabIcon, tabText);
+        tabWidget_->setCurrentIndex(tabIndex);
+        survivor->show();
+    }
+
+    BaseTerminal *survivingTerminal =
+            activeTerminalInWidget(survivor);
+    if (survivingTerminal != nullptr) {
+        setActiveEmptySplitPane(nullptr);
+        setCurrentTerminal(survivingTerminal);
+        survivingTerminal->setFocus();
+        return;
+    }
+
+    QWidget *emptyPane =
+            firstEmptySplitPaneInWidget(survivor);
+    setCurrentTerminal(nullptr);
+    setActiveEmptySplitPane(emptyPane);
+    if (emptyPane != nullptr) {
+        emptyPane->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void MainWindow::onCloseSplitRequested(BaseTerminal *terminal) {
+    closeSplitPane(terminal);
+}
+
 #if defined(Q_OS_WIN)
 bool MainWindow::nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) {
     Q_UNUSED(eventType)
@@ -675,6 +1242,16 @@ bool MainWindow::nativeEventFilter(const QByteArray &eventType, void *message, q
 #endif
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+    auto *watchedWidget = qobject_cast<QWidget *>(watched);
+    if (isEmptySplitPane(watchedWidget) &&
+        (event->type() == QEvent::FocusIn ||
+         event->type() == QEvent::MouseButtonPress)) {
+        setActiveEmptySplitPane(watchedWidget);
+        if (event->type() == QEvent::MouseButtonPress) {
+            watchedWidget->setFocus(Qt::MouseFocusReason);
+        }
+    }
+
     if (isFullscreen_ && watched == fullscreenWidget_ && event->type() == QEvent::KeyPress) {
         auto *keyEvent = dynamic_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
@@ -691,125 +1268,109 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 }
 
 void MainWindow::onFullscreenAction() {
-    if (currentTab_ == nullptr) {
+    if (isFullscreen_) {
+        exitFullscreen();
         return;
     }
 
-    if (!isFullscreen_) {
-        isFullscreen_ = true;
-
-        BaseTerminal *terminal = currentTab_;
-        fullscreenWidget_ = terminal;
-
-        int index = tabWidget_->indexOf(terminal);
-        QString tabText = tabWidget_->tabText(index);
-        QIcon tabIcon = tabWidget_->tabIcon(index);
-
-        terminal->setProperty("tabIndex", index);
-        terminal->setProperty("tabText", tabText);
-        terminal->setProperty("tabIcon", tabIcon);
-
-        disconnect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
-        tabWidget_->removeTab(index);
-        connect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
-
-        terminal->setParent(nullptr);
-        terminal->setWindowFlags(Qt::Window);
-        terminal->showFullScreen();
-
-        // 创建退出全屏按钮
-        auto *exitBtn = new QPushButton(terminal);
-        exitBtn->setObjectName("exitFullscreenBtn");
-        exitBtn->setIcon(QIcon(":/images/fullscreen.png"));
-        exitBtn->setIconSize(QSize(24, 24));
-        exitBtn->setFixedSize(40, 40);
-        exitBtn->setToolTip(tr("Exit Fullscreen (Esc)"));
-        exitBtn->setCursor(Qt::PointingHandCursor);
-        exitBtn->setStyleSheet(
-                "QPushButton {"
-                "  background-color: rgba(60, 60, 60, 220);"  // 更高的不透明度
-                "  border: 2px solid rgba(255, 255, 255, 100);"  // 添加边框增加可见性
-                "  border-radius: 20px;"
-                "}"
-                "QPushButton:hover {"
-                "  background-color: rgba(100, 100, 100, 240);"
-                "}");
-
-        // 使用屏幕尺寸计算位置
-        QScreen *screen = terminal->screen();
-        if (screen) {
-            QRect screenGeometry = screen->geometry();
-            exitBtn->move(screenGeometry.width() - exitBtn->width() - 20, 20);
-        }
-
-        exitBtn->show();
-        exitBtn->raise();
-        connect(exitBtn, &QPushButton::clicked, this, &MainWindow::exitFullscreen);
-
-        escShortcut_ = new QShortcut(QKeySequence(Qt::Key_Escape), terminal);
-        escShortcut_->setContext(Qt::WindowShortcut);
-        connect(escShortcut_, &QShortcut::activated, this, &MainWindow::exitFullscreen);
-
-        terminal->setFocus();
-        currentTab_ = nullptr;
-    } else {
-        exitFullscreen();
+    BaseTerminal *terminal = currentTab_;
+    QWidget *root = tabRootForTerminal(terminal);
+    const int index = root == nullptr ? -1 : tabWidget_->indexOf(root);
+    if (terminal == nullptr || index < 0) {
+        return;
     }
-}
 
+    root->setProperty("tabIndex", index);
+    root->setProperty("tabText", tabWidget_->tabText(index));
+    root->setProperty("tabIcon", tabWidget_->tabIcon(index));
+    setSplitActionsEnabled(root, false);
+
+    {
+        QSignalBlocker blocker(tabWidget_);
+        tabWidget_->removeTab(index);
+    }
+
+    fullscreenWidget_ = root;
+    isFullscreen_ = true;
+    root->setParent(nullptr);
+    root->setWindowFlags(Qt::Window);
+    root->showFullScreen();
+
+    auto *exitBtn = new QPushButton(terminal);
+    exitBtn->setObjectName("exitFullscreenBtn");
+    exitBtn->setIcon(QIcon(":/images/fullscreen.png"));
+    exitBtn->setIconSize(QSize(24, 24));
+    exitBtn->setFixedSize(40, 40);
+    exitBtn->setToolTip(tr("Exit Fullscreen (Esc)"));
+    exitBtn->setCursor(Qt::PointingHandCursor);
+    exitBtn->setStyleSheet(
+            "QPushButton {"
+            "  background-color: rgba(60, 60, 60, 220);"
+            "  border: 2px solid rgba(255, 255, 255, 100);"
+            "  border-radius: 20px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(100, 100, 100, 240);"
+            "}");
+    exitBtn->move(qMax(0, terminal->width() - exitBtn->width() - 20), 20);
+    exitBtn->show();
+    exitBtn->raise();
+    connect(exitBtn, &QPushButton::clicked,
+            this, &MainWindow::exitFullscreen);
+
+    escShortcut_ = new QShortcut(QKeySequence(Qt::Key_Escape), root);
+    escShortcut_->setContext(Qt::WindowShortcut);
+    connect(escShortcut_, &QShortcut::activated,
+            this, &MainWindow::exitFullscreen);
+
+    terminal->setFocus();
+}
 
 void MainWindow::exitFullscreen() {
     if (!isFullscreen_ || fullscreenWidget_ == nullptr) {
         return;
     }
 
-    auto *terminal = dynamic_cast<BaseTerminal *>(fullscreenWidget_);
-    if (terminal == nullptr) {
-        return;
+    QWidget *root = fullscreenWidget_;
+    BaseTerminal *terminal = currentTab_;
+    if (!containsTerminal(root, terminal)) {
+        terminal = firstTerminalInWidget(root);
     }
 
-    int index = terminal->property("tabIndex").toInt();
-    QString tabText = terminal->property("tabText").toString();
-    auto tabIcon = terminal->property("tabIcon").value<QIcon>();
+    delete root->findChild<QPushButton *>("exitFullscreenBtn");
+    delete escShortcut_;
+    escShortcut_ = nullptr;
 
-    // 删除退出按钮
-    auto *exitBtn = terminal->findChild<QPushButton *>("exitFullscreenBtn");
-    delete exitBtn;
-
-    // 删除快捷键
-    if (escShortcut_) {
-        delete escShortcut_;
-        escShortcut_ = nullptr;
-    }
-
-    terminal->setWindowFlags(Qt::Widget);
-    terminal->showNormal();
-
-    disconnect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
-
+    int index = root->property("tabIndex").toInt();
     if (index > tabWidget_->count()) {
         index = tabWidget_->count();
     }
+    const QString tabText = root->property("tabText").toString();
+    const auto tabIcon = root->property("tabIcon").value<QIcon>();
 
-    tabWidget_->insertTab(index, terminal, tabIcon, tabText);
-    tabWidget_->setCurrentIndex(index);
+    root->setWindowFlags(Qt::Widget);
+    {
+        QSignalBlocker blocker(tabWidget_);
+        tabWidget_->insertTab(index, root, tabIcon, tabText);
+        tabWidget_->setCurrentIndex(index);
+    }
+    root->show();
+    setSplitActionsEnabled(root, true);
 
-    connect(tabWidget_, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
-
-    currentTab_ = terminal;
-    currentTab_->setFocus();
-
-    isFullscreen_ = false;
     fullscreenWidget_ = nullptr;
+    isFullscreen_ = false;
+    setCurrentTerminal(terminal);
+    if (terminal != nullptr) {
+        terminal->setFocus();
+    }
 }
 
 void MainWindow::onRunLuaScriptAction() {
     QString filePath = QFileDialog::getOpenFileName(
-        this,
-        tr("Select Lua Script"),
-        QString(),
-        tr("Lua Scripts (*.lua);;All Files (*)")
-    );
+            this,
+            tr("Select Lua Script"),
+            QString(),
+            tr("Lua Scripts (*.lua);;All Files (*)"));
 
     if (!filePath.isEmpty()) {
         runScript(filePath);
@@ -829,13 +1390,12 @@ void MainWindow::onRecentScriptTriggered() {
         } else {
             // 文件不存在，弹窗询问用户是否从历史列表中移除
             auto result = QMessageBox::question(
-                this,
-                tr("Script Not Found"),
-                tr("The script file does not exist:\n%1\n\nDo you want to remove it from the recent list?")
-                    .arg(scriptPath),
-                QMessageBox::Yes | QMessageBox::No,
-                QMessageBox::Yes
-            );
+                    this,
+                    tr("Script Not Found"),
+                    tr("The script file does not exist:\n%1\n\nDo you want to remove it from the recent list?")
+                            .arg(scriptPath),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::Yes);
 
             if (result == QMessageBox::Yes) {
                 recentScripts_.removeAll(scriptPath);
@@ -919,56 +1479,55 @@ void MainWindow::updateRecentScriptsMenu() {
 
 // 在文件末尾添加槽函数实现
 void MainWindow::onDocAction() {
-    QDesktopServices::openUrl(QUrl("https://github.com/qiushao/qshell"));  // 替换为实际文档地址
+    QDesktopServices::openUrl(QUrl("https://github.com/qiushao/qshell"));// 替换为实际文档地址
 }
 
 void MainWindow::onAboutAction() {
     QMessageBox::about(this, tr("关于"),
-        tr("<h3>%1</h3>"
-           "<p>版本: %2</p>"
-           "<p>%3</p>")
-        .arg(QCoreApplication::applicationName())
-        .arg(QCoreApplication::applicationVersion())
-        .arg("Copyright © 2026 qiushao"));
+                       tr("<h3>%1</h3>"
+                          "<p>版本: %2</p>"
+                          "<p>%3</p>")
+                               .arg(QCoreApplication::applicationName())
+                               .arg(QCoreApplication::applicationVersion())
+                               .arg("Copyright © 2026 qiushao"));
 }
 
-void MainWindow::onSendKey(const QString& keyName)
-{
+void MainWindow::onSendKey(const QString &keyName) {
     sendKeyToCurrent(keyName);
 }
 
-bool MainWindow::sendKeyToCurrent(const QString& keyName) {
+bool MainWindow::sendKeyToCurrent(const QString &keyName) {
     // 按键名称到按键码的映射
     static const QMap<QString, int> keyMap = {
-        {"Enter",     Qt::Key_Return},
-        {"Return",    Qt::Key_Return},
-        {"Tab",       Qt::Key_Tab},
-        {"Escape",    Qt::Key_Escape},
-        {"Esc",       Qt::Key_Escape},
-        {"Backspace", Qt::Key_Backspace},
-        {"Delete",    Qt::Key_Delete},
-        {"Del",       Qt::Key_Delete},
-        {"Up",        Qt::Key_Up},
-        {"Down",      Qt::Key_Down},
-        {"Left",      Qt::Key_Left},
-        {"Right",     Qt::Key_Right},
-        {"Home",      Qt::Key_Home},
-        {"End",       Qt::Key_End},
-        {"PageUp",    Qt::Key_PageUp},
-        {"PageDown",  Qt::Key_PageDown},
-        {"Insert",    Qt::Key_Insert},
-        {"F1",        Qt::Key_F1},
-        {"F2",        Qt::Key_F2},
-        {"F3",        Qt::Key_F3},
-        {"F4",        Qt::Key_F4},
-        {"F5",        Qt::Key_F5},
-        {"F6",        Qt::Key_F6},
-        {"F7",        Qt::Key_F7},
-        {"F8",        Qt::Key_F8},
-        {"F9",        Qt::Key_F9},
-        {"F10",       Qt::Key_F10},
-        {"F11",       Qt::Key_F11},
-        {"F12",       Qt::Key_F12},
+            {"Enter", Qt::Key_Return},
+            {"Return", Qt::Key_Return},
+            {"Tab", Qt::Key_Tab},
+            {"Escape", Qt::Key_Escape},
+            {"Esc", Qt::Key_Escape},
+            {"Backspace", Qt::Key_Backspace},
+            {"Delete", Qt::Key_Delete},
+            {"Del", Qt::Key_Delete},
+            {"Up", Qt::Key_Up},
+            {"Down", Qt::Key_Down},
+            {"Left", Qt::Key_Left},
+            {"Right", Qt::Key_Right},
+            {"Home", Qt::Key_Home},
+            {"End", Qt::Key_End},
+            {"PageUp", Qt::Key_PageUp},
+            {"PageDown", Qt::Key_PageDown},
+            {"Insert", Qt::Key_Insert},
+            {"F1", Qt::Key_F1},
+            {"F2", Qt::Key_F2},
+            {"F3", Qt::Key_F3},
+            {"F4", Qt::Key_F4},
+            {"F5", Qt::Key_F5},
+            {"F6", Qt::Key_F6},
+            {"F7", Qt::Key_F7},
+            {"F8", Qt::Key_F8},
+            {"F9", Qt::Key_F9},
+            {"F10", Qt::Key_F10},
+            {"F11", Qt::Key_F11},
+            {"F12", Qt::Key_F12},
     };
 
     // 处理组合键 (如 "Ctrl+C")
@@ -981,10 +1540,10 @@ bool MainWindow::sendKeyToCurrent(const QString& keyName) {
 
         for (int i = 0; i < parts.size() - 1; ++i) {
             QString mod = parts[i].trimmed().toLower();
-            if (mod == "ctrl")  modifiers |= Qt::ControlModifier;
-            if (mod == "alt")   modifiers |= Qt::AltModifier;
+            if (mod == "ctrl") modifiers |= Qt::ControlModifier;
+            if (mod == "alt") modifiers |= Qt::AltModifier;
             if (mod == "shift") modifiers |= Qt::ShiftModifier;
-            if (mod == "meta")  modifiers |= Qt::MetaModifier;
+            if (mod == "meta") modifiers |= Qt::MetaModifier;
         }
     }
 
@@ -1021,26 +1580,28 @@ QString MainWindow::getLastLine() const {
 }
 
 bool MainWindow::openSessionById(const QString &sessionId) {
-    auto session = ConfigManager::instance()->sessionById(sessionId);
-    BaseTerminal *terminal = nullptr;
-
-    if (session.protocolType == ProtocolType::Serial) {
-        terminal = new SerialTerminal(session, this);
-    } else if (session.protocolType == ProtocolType::LocalShell) {
-        terminal = new LocalTerminal(this);
-    } else if (session.protocolType == ProtocolType::SSH) {
-        terminal = new SSHTerminal(session, this);
-    } else {
+    const SessionData session =
+            ConfigManager::instance()->sessionById(sessionId);
+    BaseTerminal *terminal = createTerminal(session, this);
+    if (terminal == nullptr) {
         qDebug() << "unknown session type!!";
         return false;
     }
 
-    QObject::connect(terminal, &BaseTerminal::onSessionError, this, &MainWindow::onSessionError);
-    tabWidget_->addTab(terminal, *connectStateIcon_, session.name);
-    tabWidget_->setCurrentWidget(terminal);
+    setupTerminal(terminal);
+    const bool openedInSplitPane =
+            fillActiveEmptySplitPane(terminal);
+    if (!openedInSplitPane) {
+        tabWidget_->addTab(
+                terminal, *connectStateIcon_, session.name);
+        tabWidget_->setCurrentWidget(terminal);
+    }
+    setCurrentTerminal(terminal);
     terminal->setFocus();
     terminal->connect();
-    qDebug() << "onOpenSession" << session.name;
+    setCurrentTerminal(terminal);
+    qDebug() << "onOpenSession" << session.name
+             << "openedInSplitPane" << openedInSplitPane;
     return true;
 }
 
@@ -1094,7 +1655,7 @@ QString MainWindow::currentTabName() const {
         return "";
     }
 
-    const int index = tabWidget_->indexOf(currentTab_);
+    const int index = tabIndexForTerminal(currentTab_);
     if (index >= 0) {
         return tabWidget_->tabText(index);
     }
@@ -1144,16 +1705,14 @@ bool MainWindow::clearCurrentScreen() {
 
 bool MainWindow::prepareZmodemUpload(
         const QStringList &filePaths) {
-    return currentTab_ != nullptr
-           && currentTab_->prepareZmodemUpload(filePaths);
+    return currentTab_ != nullptr && currentTab_->prepareZmodemUpload(filePaths);
 }
 
 bool MainWindow::prepareZmodemDownload(
         const QString &directoryPath) {
-    return currentTab_ != nullptr
-           && currentTab_->prepareZmodemDownload(directoryPath);
+    return currentTab_ != nullptr && currentTab_->prepareZmodemDownload(directoryPath);
 }
 
-BaseTerminal * MainWindow::getCurrentSession() const {
+BaseTerminal *MainWindow::getCurrentSession() const {
     return currentTab_;
 }

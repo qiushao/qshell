@@ -2,6 +2,7 @@
 #define QSHELL_MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QShortcut>
 #include <QStringList>
 #if defined(Q_OS_WIN)
@@ -16,10 +17,12 @@ class BaseTerminal;
 class CollapsibleDockWidget;
 class LuaScriptEngine;
 class McpHttpServer;
+struct SessionData;
 
 class MainWindow : public QMainWindow
 #if defined(Q_OS_WIN)
-    , public QAbstractNativeEventFilter
+    ,
+                   public QAbstractNativeEventFilter
 #endif
 {
     Q_OBJECT
@@ -31,30 +34,34 @@ public:
     bool runScriptAtStartup(const QString &scriptPath, const QStringList &scriptArgs = {});
     Q_INVOKABLE QString getScreenText() const;
     Q_INVOKABLE QString getLastLine() const;
-    Q_INVOKABLE bool openSessionById(const QString& sessionId);
-    Q_INVOKABLE bool openSessionByName(const QString& sessionName);
+    Q_INVOKABLE bool openSessionById(const QString &sessionId);
+    Q_INVOKABLE bool openSessionByName(const QString &sessionName);
     Q_INVOKABLE int tabCount() const;
     Q_INVOKABLE void nextTab() const;
-    Q_INVOKABLE bool switchToTab(const QString& tabName) const;
+    Q_INVOKABLE bool switchToTab(const QString &tabName) const;
     Q_INVOKABLE bool switchToTabIndex(int index) const;
     Q_INVOKABLE QString currentTabName() const;
     Q_INVOKABLE bool connectCurrentSession();
     Q_INVOKABLE bool disconnectCurrentSession() const;
     Q_INVOKABLE bool sendTextToCurrent(QString text, bool interpretEscapes = true);
-    Q_INVOKABLE bool sendKeyToCurrent(const QString& keyName);
+    Q_INVOKABLE bool sendKeyToCurrent(const QString &keyName);
     Q_INVOKABLE bool clearCurrentScreen();
     Q_INVOKABLE bool prepareZmodemUpload(const QStringList &filePaths);
     Q_INVOKABLE bool prepareZmodemDownload(const QString &directoryPath);
-    BaseTerminal* getCurrentSession() const;
+    BaseTerminal *getCurrentSession() const;
 
 private slots:
-    void onOpenSession(const QString& sessionId);
-    void onSessionError(BaseTerminal *terminal) const;
+    void onOpenSession(const QString &sessionId);
+    void onSessionError(BaseTerminal *terminal);
     void onDisconnectAction() const;
     void onTabChanged(int index);
-    void onTabCloseRequested(int index) const;
+    void onTabCloseRequested(int index);
+    void onTabSplitRequested(int index, Qt::Orientation orientation);
+    void onTerminalActivated(BaseTerminal *terminal);
+    void onSplitRequested(BaseTerminal *terminal, Qt::Orientation orientation);
+    void onCloseSplitRequested(BaseTerminal *terminal);
     void onCommandSend(const QString &command);
-    void onSendKey(const QString& keyName);
+    void onSendKey(const QString &keyName);
 
     void onSettingsAction();
     void onImportConfigAction();
@@ -99,6 +106,17 @@ private:
     void restoreLayoutState();
     void exitFullscreen();
     void updateFileTransferMenu();
+    static BaseTerminal *createTerminal(const SessionData &session, QWidget *parent);
+    QWidget *createEmptySplitPane();
+    void setupTerminal(BaseTerminal *terminal) const;
+    void setCurrentTerminal(BaseTerminal *terminal);
+    void setActiveEmptySplitPane(QWidget *pane);
+    bool fillActiveEmptySplitPane(BaseTerminal *terminal);
+    void closeSplitPane(QWidget *pane);
+    QWidget *tabRootForWidget(QWidget *widget) const;
+    int tabIndexForWidget(QWidget *widget) const;
+    QWidget *tabRootForTerminal(BaseTerminal *terminal) const;
+    int tabIndexForTerminal(BaseTerminal *terminal) const;
     static BaseTerminal *terminalForWidget(QWidget *widget);
 
 #if defined(Q_OS_WIN)
@@ -175,6 +193,7 @@ private:
 
     // session table
     BaseTerminal *currentTab_ = nullptr;
+    QPointer<QWidget> activeEmptySplitPane_;
     SessionTabWidget *tabWidget_ = nullptr;
     SessionTreeWidget *treeWidget_ = nullptr;
 
@@ -198,4 +217,4 @@ private:
     McpHttpServer *mcpServer_ = nullptr;
 };
 
-#endif // QSHELL_MAINWINDOW_H
+#endif// QSHELL_MAINWINDOW_H

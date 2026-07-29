@@ -1,11 +1,11 @@
 #ifndef QSHELL_SESSIONTABWIDGET_H
 #define QSHELL_SESSIONTABWIDGET_H
 
-#include <QTabWidget>
-#include <QTabBar>
 #include <QProxyStyle>
 #include <QStyleFactory>
 #include <QStyleOptionTab>
+#include <QTabBar>
+#include <QTabWidget>
 
 #ifdef Q_OS_MACOS
 class LeftAlignedTabStyle : public QProxyStyle {
@@ -42,6 +42,9 @@ public:
     explicit SessionTabWidget(QWidget *parent = nullptr);
     ~SessionTabWidget() override = default;
 
+signals:
+    void splitRequested(int tabIndex, Qt::Orientation orientation);
+
 protected:
     void tabInserted(int index) override;
     void tabRemoved(int index) override;
@@ -54,4 +57,4 @@ private:
     int m_contextMenuTabIndex = -1;
 };
 
-#endif // QSHELL_SESSIONTABWIDGET_H
+#endif// QSHELL_SESSIONTABWIDGET_H

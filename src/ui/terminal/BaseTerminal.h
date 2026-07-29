@@ -1,19 +1,20 @@
 #ifndef QSHELL_BASE_TERMINAL_H
 #define QSHELL_BASE_TERMINAL_H
 
-#include "qtermwidget.h"
 #include "core/datatype.h"
-#include "core/zmodem/ZmodemTransfer.h"
 #include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemTransfer.h"
+#include "core/zmodem/ZmodemTransfer.h"
+#include "qtermwidget.h"
+#include <QColorDialog>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QMenu>
 #include <QStringList>
-#include <QColorDialog>
 #include <QTimer>
 
 class QFileDialog;
+class QFocusEvent;
 class IPtyProcess;
 class QProgressDialog;
 
@@ -38,9 +39,12 @@ public:
     bool prepareZmodemUpload(const QStringList &filePaths);
     bool prepareZmodemDownload(const QString &directoryPath);
 
-    signals:
-        void onSessionError(BaseTerminal *terminal);
+signals:
+    void onSessionError(BaseTerminal *terminal);
     void loggingStateChanged(bool isLogging);
+    void activated(BaseTerminal *terminal);
+    void splitRequested(BaseTerminal *terminal, Qt::Orientation orientation);
+    void closeSplitRequested(BaseTerminal *terminal);
 
 protected:
     void onDisplayOutput(const QString &line);
@@ -48,7 +52,7 @@ protected:
     void receiveBackendData(const QByteArray &data);
     virtual void writeToBackend(const QByteArray &data) = 0;
 
-    // 右键菜单事件
+    void focusInEvent(QFocusEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private slots:

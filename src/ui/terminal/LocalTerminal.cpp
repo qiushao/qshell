@@ -2,7 +2,9 @@
 
 #include "iptyprocess.h"
 
-LocalTerminal::LocalTerminal(QWidget *parent) : BaseTerminal(parent) {
+LocalTerminal::LocalTerminal(const SessionData &session, QWidget *parent)
+    : BaseTerminal(parent) {
+    sessionData_ = session;
 }
 
 LocalTerminal::~LocalTerminal() = default;

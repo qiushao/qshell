@@ -4,10 +4,9 @@
 #include "BaseTerminal.h"
 
 
-
 class LocalTerminal : public BaseTerminal {
 public:
-    explicit LocalTerminal(QWidget *parent);
+    explicit LocalTerminal(const SessionData &session, QWidget *parent);
     ~LocalTerminal() override;
     void connect() override;
     void disconnect() override;
@@ -17,4 +16,4 @@ protected:
 };
 
 
-#endif //QSHELL_LOCAL_TERMINAL_H
+#endif//QSHELL_LOCAL_TERMINAL_H

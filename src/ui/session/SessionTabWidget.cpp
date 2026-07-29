@@ -49,6 +49,18 @@ void SessionTabWidget::showTabContextMenu(const QPoint &pos) {
     QAction *renameAction = menu.addAction(tr("Rename Tab"));
     connect(renameAction, &QAction::triggered, this, &SessionTabWidget::renameTab);
 
+    menu.addSeparator();
+    QMenu *splitMenu = menu.addMenu(tr("分屏"));
+    QAction *splitLeftRightAction = splitMenu->addAction(tr("左右分屏"));
+    connect(splitLeftRightAction, &QAction::triggered, this, [this]() {
+        emit splitRequested(m_contextMenuTabIndex, Qt::Horizontal);
+    });
+
+    QAction *splitTopBottomAction = splitMenu->addAction(tr("上下分屏"));
+    connect(splitTopBottomAction, &QAction::triggered, this, [this]() {
+        emit splitRequested(m_contextMenuTabIndex, Qt::Vertical);
+    });
+
     menu.exec(tabBar()->mapToGlobal(pos));
 }
 
