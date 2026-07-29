@@ -213,6 +213,7 @@ private:
     QWidget *fullscreenWidget_ = nullptr;
     QWidget *fullscreenWindow_ = nullptr;
     QShortcut *escShortcut_ = nullptr;
+    QShortcut *fullscreenShortcut_ = nullptr;
 
     LuaScriptEngine *luaEngine_ = nullptr;
     McpHttpServer *mcpServer_ = nullptr;

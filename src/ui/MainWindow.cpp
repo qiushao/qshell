@@ -25,12 +25,15 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QPushButton>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QThread>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <functional>
 #include <utility>
 
 #if defined(Q_OS_WIN)
@@ -38,6 +41,141 @@
 #endif
 
 namespace {
+
+class DraggablePushButton final : public QPushButton {
+public:
+    using QPushButton::QPushButton;
+
+    void setDragFinishedCallback(
+            std::function<void(const QPoint &)> callback) {
+        dragFinishedCallback_ = std::move(callback);
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            dragging_ = true;
+            moved_ = false;
+            dragStartGlobalPosition_ =
+                    event->globalPosition().toPoint();
+            dragStartButtonPosition_ = pos();
+        }
+        QPushButton::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (!dragging_ ||
+            !(event->buttons() & Qt::LeftButton)) {
+            QPushButton::mouseMoveEvent(event);
+            return;
+        }
+
+        const QPoint offset =
+                event->globalPosition().toPoint() -
+                dragStartGlobalPosition_;
+        if (!moved_ &&
+            offset.manhattanLength() <
+                    QApplication::startDragDistance()) {
+            QPushButton::mouseMoveEvent(event);
+            return;
+        }
+
+        moved_ = true;
+        setDown(false);
+        QWidget *container = parentWidget();
+        if (container != nullptr) {
+            const QRect bounds = container->contentsRect();
+            const QPoint target =
+                    dragStartButtonPosition_ + offset;
+            const int maxX =
+                    bounds.left() +
+                    qMax(0, bounds.width() - width());
+            const int maxY =
+                    bounds.top() +
+                    qMax(0, bounds.height() - height());
+            move(qBound(bounds.left(), target.x(), maxX),
+                 qBound(bounds.top(), target.y(), maxY));
+            raise();
+        }
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton && dragging_) {
+            dragging_ = false;
+            if (moved_) {
+                moved_ = false;
+                setDown(false);
+                if (dragFinishedCallback_) {
+                    dragFinishedCallback_(pos());
+                }
+                event->accept();
+                return;
+            }
+        }
+        QPushButton::mouseReleaseEvent(event);
+    }
+
+private:
+    bool dragging_ = false;
+    bool moved_ = false;
+    QPoint dragStartGlobalPosition_;
+    QPoint dragStartButtonPosition_;
+    std::function<void(const QPoint &)>
+            dragFinishedCallback_;
+};
+
+constexpr auto fullscreenExitButtonPositionKey =
+        "fullscreenExitButtonPosition";
+
+void restoreFullscreenExitButtonPosition(
+        QPushButton *button, QWidget *window) {
+    if (button == nullptr || window == nullptr) {
+        return;
+    }
+
+    const int maxX =
+            qMax(0, window->width() - button->width());
+    const int maxY =
+            qMax(0, window->height() - button->height());
+    QSettings settings;
+    const QVariant savedPosition =
+            settings.value(fullscreenExitButtonPositionKey);
+    if (savedPosition.canConvert<QPointF>()) {
+        const QPointF normalizedPosition =
+                savedPosition.toPointF();
+        button->move(
+                qRound(qBound(0.0, normalizedPosition.x(), 1.0) *
+                       maxX),
+                qRound(qBound(0.0, normalizedPosition.y(), 1.0) *
+                       maxY));
+        return;
+    }
+
+    button->move(qMax(0, maxX - 20), qMin(20, maxY));
+}
+
+void saveFullscreenExitButtonPosition(
+        const QPushButton *button, const QWidget *window) {
+    if (button == nullptr || window == nullptr) {
+        return;
+    }
+
+    const int maxX =
+            qMax(0, window->width() - button->width());
+    const int maxY =
+            qMax(0, window->height() - button->height());
+    const QPointF normalizedPosition(
+            maxX == 0
+                    ? 0.0
+                    : static_cast<double>(button->x()) / maxX,
+            maxY == 0
+                    ? 0.0
+                    : static_cast<double>(button->y()) / maxY);
+    QSettings settings;
+    settings.setValue(fullscreenExitButtonPositionKey,
+                      normalizedPosition);
+}
 
 QList<BaseTerminal *> terminalsInWidget(QWidget *widget) {
     if (widget == nullptr) {
@@ -1344,7 +1482,8 @@ void MainWindow::onFullscreenAction() {
                         fullscreenWindow, fullscreenRoot);
             });
 
-    auto *exitBtn = new QPushButton(terminal);
+    auto *exitBtn =
+            new DraggablePushButton(fullscreenWindow);
     exitBtn->setObjectName("exitFullscreenBtn");
     exitBtn->setIcon(QIcon(":/images/fullscreen.png"));
     exitBtn->setIconSize(QSize(24, 24));
@@ -1360,9 +1499,22 @@ void MainWindow::onFullscreenAction() {
             "QPushButton:hover {"
             "  background-color: rgba(100, 100, 100, 240);"
             "}");
-    exitBtn->move(qMax(0, terminal->width() - exitBtn->width() - 20), 20);
+    restoreFullscreenExitButtonPosition(
+            exitBtn, fullscreenWindow);
     exitBtn->show();
     exitBtn->raise();
+    exitBtn->setDragFinishedCallback(
+            [fullscreenWindow, exitBtn](const QPoint &) {
+                saveFullscreenExitButtonPosition(
+                        exitBtn, fullscreenWindow);
+            });
+    QTimer::singleShot(
+            0, exitBtn,
+            [fullscreenWindow, exitBtn]() {
+                restoreFullscreenExitButtonPosition(
+                        exitBtn, fullscreenWindow);
+                exitBtn->raise();
+            });
     connect(exitBtn, &QPushButton::clicked,
             this, &MainWindow::exitFullscreen);
 
@@ -1370,6 +1522,13 @@ void MainWindow::onFullscreenAction() {
             QKeySequence(Qt::Key_Escape), fullscreenWindow);
     escShortcut_->setContext(Qt::WindowShortcut);
     connect(escShortcut_, &QShortcut::activated,
+            this, &MainWindow::exitFullscreen);
+
+    fullscreenShortcut_ = new QShortcut(
+            QKeySequence(Qt::Key_F11), fullscreenWindow);
+    fullscreenShortcut_->setContext(Qt::WindowShortcut);
+    fullscreenShortcut_->setAutoRepeat(false);
+    connect(fullscreenShortcut_, &QShortcut::activated,
             this, &MainWindow::exitFullscreen);
 
     terminal->setFocus();
@@ -1387,9 +1546,16 @@ void MainWindow::exitFullscreen() {
         terminal = firstTerminalInWidget(root);
     }
 
-    delete root->findChild<QPushButton *>("exitFullscreenBtn");
+    QWidget *buttonContainer =
+            fullscreenWindow == nullptr
+                    ? root
+                    : fullscreenWindow;
+    delete buttonContainer->findChild<QPushButton *>(
+            "exitFullscreenBtn");
     delete escShortcut_;
     escShortcut_ = nullptr;
+    delete fullscreenShortcut_;
+    fullscreenShortcut_ = nullptr;
 
     int index = root->property("tabIndex").toInt();
     if (index > tabWidget_->count()) {
