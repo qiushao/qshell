@@ -43,6 +43,8 @@ public:
     Q_INVOKABLE bool sendTextToCurrent(QString text, bool interpretEscapes = true);
     Q_INVOKABLE bool sendKeyToCurrent(const QString& keyName);
     Q_INVOKABLE bool clearCurrentScreen();
+    Q_INVOKABLE bool prepareZmodemUpload(const QStringList &filePaths);
+    Q_INVOKABLE bool prepareZmodemDownload(const QString &directoryPath);
     BaseTerminal* getCurrentSession() const;
 
 private slots:

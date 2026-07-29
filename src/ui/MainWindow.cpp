@@ -1142,6 +1142,18 @@ bool MainWindow::clearCurrentScreen() {
     return true;
 }
 
+bool MainWindow::prepareZmodemUpload(
+        const QStringList &filePaths) {
+    return currentTab_ != nullptr
+           && currentTab_->prepareZmodemUpload(filePaths);
+}
+
+bool MainWindow::prepareZmodemDownload(
+        const QString &directoryPath) {
+    return currentTab_ != nullptr
+           && currentTab_->prepareZmodemDownload(directoryPath);
+}
+
 BaseTerminal * MainWindow::getCurrentSession() const {
     return currentTab_;
 }

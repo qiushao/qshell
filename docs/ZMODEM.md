@@ -16,6 +16,30 @@ QShell 会自动识别终端数据流中的 ZMODEM 握手，不需要在本机�
 
 下载先写入同目录的临时文件，完整接收并通过 CRC 校验后再提交为目标文件。中断或失败不会留下不完整的目标文件。
 
+## Lua 与 MCP 自动化
+
+Lua 脚本和 MCP 可以在远端 ZMODEM 命令执行前预设本地路径。握手出现后，
+QShell 会直接使用预设值，不打开文件或目录选择窗口。上传可预设一个或多个
+本地文件；下载接收路径是一个已经存在且可写的目录。每个预设只用于下一次
+方向匹配的传输。
+
+Lua：
+
+```lua
+assert(qshell.zmodem.download("/tmp/downloads"))
+qshell.screen.sendText("sz /var/log/app.log\r")
+```
+
+MCP：
+
+```json
+{"name":"qshell_zmodem_download","arguments":{"directoryPath":"/tmp/downloads"}}
+{"name":"qshell_send_text","arguments":{"text":"sz /var/log/app.log\\r"}}
+```
+
+完整接口说明见 [Lua 脚本 API](./LuaScriptEngine.md) 和
+[MCP 工具列表](./MCP.md)。
+
 ## 支持范围
 
 - 支持十六进制、CRC16 二进制和 CRC32 二进制帧。

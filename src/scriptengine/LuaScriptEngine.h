@@ -33,6 +33,7 @@ private:
     void registerAppModule(sol::table &qshell);
     void registerScreenModule(sol::table &qshell);
     void registerSessionModule(sol::table &qshell);
+    void registerZmodemModule(sol::table &qshell);
     void registerTimerModule(sol::table &qshell);
     void registerHttpModule(sol::table &qshell);
     void onDisplayOutput(const QString &line);

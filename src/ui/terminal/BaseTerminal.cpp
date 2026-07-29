@@ -424,6 +424,45 @@ void BaseTerminal::displayBackendData(
     zmodemTransfer_->enqueueData(data);
 }
 
+bool BaseTerminal::prepareZmodemUpload(
+        const QStringList &filePaths) {
+    if (!isConnect() || zmodemTransfer_->isActive()
+        || filePaths.isEmpty()) {
+        return false;
+    }
+
+    QStringList absolutePaths;
+    absolutePaths.reserve(filePaths.size());
+    for (const QString &filePath: filePaths) {
+        const QFileInfo fileInfo(filePath);
+        if (!fileInfo.isFile() || !fileInfo.isReadable()) {
+            return false;
+        }
+        absolutePaths.append(fileInfo.absoluteFilePath());
+    }
+
+    pendingZmodemUploadPaths_ = absolutePaths;
+    pendingZmodemDownloadDirectory_.clear();
+    return true;
+}
+
+bool BaseTerminal::prepareZmodemDownload(
+        const QString &directoryPath) {
+    if (!isConnect() || zmodemTransfer_->isActive()) {
+        return false;
+    }
+
+    const QFileInfo directoryInfo(directoryPath);
+    if (!directoryInfo.isDir() || !directoryInfo.isWritable()) {
+        return false;
+    }
+
+    pendingZmodemDownloadDirectory_ =
+            directoryInfo.absoluteFilePath();
+    pendingZmodemUploadPaths_.clear();
+    return true;
+}
+
 void BaseTerminal::beginPendingXyModemCommand(
         const XyModemCommand command) {
     clearPendingXyModemCommand();
@@ -516,6 +555,15 @@ void BaseTerminal::onZmodemDetected(
                     ? QDir::homePath()
                     : zmodemDirectory_;
     if (direction == ZmodemTransfer::Direction::Download) {
+        if (!pendingZmodemDownloadDirectory_.isEmpty()) {
+            const QString directory =
+                    pendingZmodemDownloadDirectory_;
+            pendingZmodemDownloadDirectory_.clear();
+            zmodemDirectory_ = directory;
+            zmodemTransfer_->acceptDownload(directory);
+            return;
+        }
+
         const QString directory = QFileDialog::getExistingDirectory(
                 this,
                 tr("选择 ZMODEM 下载目录"),
@@ -527,6 +575,15 @@ void BaseTerminal::onZmodemDetected(
         }
         zmodemDirectory_ = directory;
         zmodemTransfer_->acceptDownload(directory);
+        return;
+    }
+
+    if (!pendingZmodemUploadPaths_.isEmpty()) {
+        const QStringList files = pendingZmodemUploadPaths_;
+        pendingZmodemUploadPaths_.clear();
+        zmodemDirectory_ =
+                QFileInfo(files.constFirst()).absolutePath();
+        zmodemTransfer_->acceptUpload(files);
         return;
     }
 

@@ -66,6 +66,8 @@ private:
     ToolResponse getScreenText() const;
     ToolResponse getLastLine() const;
     ToolResponse clearScreen() const;
+    ToolResponse prepareZmodemUpload(const QJsonObject &arguments) const;
+    ToolResponse prepareZmodemDownload(const QJsonObject &arguments) const;
 
     void waitForString(const QJsonObject &arguments, const ToolCallback &callback);
     void waitForRegex(const QJsonObject &arguments, const ToolCallback &callback);

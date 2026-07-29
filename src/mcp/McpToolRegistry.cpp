@@ -188,6 +188,40 @@ QJsonArray McpToolRegistry::toolDefinitions() {
                                     false,
                                     true));
 
+    QJsonObject uploadPathsProperty;
+    uploadPathsProperty["type"] = "array";
+    uploadPathsProperty["description"] =
+            tr("Local file paths to upload when the remote side starts rz.");
+    uploadPathsProperty["minItems"] = 1;
+    uploadPathsProperty["items"] =
+            QJsonObject{{"type", "string"}};
+    QJsonObject zmodemUploadProperties;
+    zmodemUploadProperties["filePaths"] =
+            uploadPathsProperty;
+    tools.append(makeToolDefinition(
+            "qshell_zmodem_upload",
+            tr("Prepare ZMODEM upload"),
+            tr("Use local files for the next ZMODEM upload without opening a file chooser. Call this before sending rz to the remote terminal."),
+            makeInputSchema(zmodemUploadProperties,
+                            {"filePaths"}),
+            false,
+            false,
+            true));
+
+    QJsonObject zmodemDownloadProperties;
+    zmodemDownloadProperties["directoryPath"] =
+            makeStringProperty(
+                    tr("Writable local directory for files received when the remote side starts sz."));
+    tools.append(makeToolDefinition(
+            "qshell_zmodem_download",
+            tr("Prepare ZMODEM download"),
+            tr("Use a local directory for the next ZMODEM download without opening a directory chooser. Call this before sending sz to the remote terminal."),
+            makeInputSchema(zmodemDownloadProperties,
+                            {"directoryPath"}),
+            false,
+            false,
+            true));
+
     QJsonObject waitStringProperties;
     waitStringProperties["text"] = makeStringProperty(tr("Text to wait for in terminal output."));
     waitStringProperties["timeoutMs"] = makeIntegerProperty(tr("Timeout in milliseconds. Defaults to 30000."), 1);
@@ -212,7 +246,7 @@ QJsonArray McpToolRegistry::toolDefinitions() {
 }
 
 bool McpToolRegistry::hasTool(const QString &name) {
-    return name == "qshell_get_status" || name == "qshell_list_sessions" || name == "qshell_open_session_by_id" || name == "qshell_open_session_by_name" || name == "qshell_switch_tab" || name == "qshell_next_tab" || name == "qshell_connect_current" || name == "qshell_disconnect_current" || name == "qshell_send_text" || name == "qshell_send_key" || name == "qshell_get_screen_text" || name == "qshell_get_last_line" || name == "qshell_clear_screen" || name == "qshell_wait_for_string" || name == "qshell_wait_for_regex";
+    return name == "qshell_get_status" || name == "qshell_list_sessions" || name == "qshell_open_session_by_id" || name == "qshell_open_session_by_name" || name == "qshell_switch_tab" || name == "qshell_next_tab" || name == "qshell_connect_current" || name == "qshell_disconnect_current" || name == "qshell_send_text" || name == "qshell_send_key" || name == "qshell_get_screen_text" || name == "qshell_get_last_line" || name == "qshell_clear_screen" || name == "qshell_zmodem_upload" || name == "qshell_zmodem_download" || name == "qshell_wait_for_string" || name == "qshell_wait_for_regex";
 }
 
 void McpToolRegistry::callTool(const QString &name, const QJsonObject &arguments, const ToolCallback &callback) {
@@ -242,6 +276,18 @@ void McpToolRegistry::callTool(const QString &name, const QJsonObject &arguments
         runUiTool([this]() { return getLastLine(); }, callback);
     } else if (name == "qshell_clear_screen") {
         runUiTool([this]() { return clearScreen(); }, callback);
+    } else if (name == "qshell_zmodem_upload") {
+        runUiTool(
+                [this, arguments]() {
+                    return prepareZmodemUpload(arguments);
+                },
+                callback);
+    } else if (name == "qshell_zmodem_download") {
+        runUiTool(
+                [this, arguments]() {
+                    return prepareZmodemDownload(arguments);
+                },
+                callback);
     } else if (name == "qshell_wait_for_string") {
         waitForString(arguments, callback);
     } else if (name == "qshell_wait_for_regex") {
@@ -481,6 +527,64 @@ McpToolRegistry::ToolResponse McpToolRegistry::clearScreen() const {
     structuredContent["cleared"] = cleared;
     structuredContent["currentSessionName"] = mainWindow_->currentTabName();
     return makeResponse(structuredContent, !cleared, cleared ? QString() : tr("No current terminal is available."));
+}
+
+McpToolRegistry::ToolResponse
+McpToolRegistry::prepareZmodemUpload(
+        const QJsonObject &arguments) const {
+    const QJsonValue filePathsValue =
+            arguments.value("filePaths");
+    if (!filePathsValue.isArray() || filePathsValue.toArray().isEmpty()) {
+        return makeErrorResponse(
+                tr("filePaths must be a non-empty array."));
+    }
+
+    QStringList filePaths;
+    for (const QJsonValue pathValue:
+         filePathsValue.toArray()) {
+        if (!pathValue.isString() || pathValue.toString().isEmpty()) {
+            return makeErrorResponse(
+                    tr("Every file path must be a non-empty string."));
+        }
+        filePaths.append(pathValue.toString());
+    }
+
+    const bool prepared =
+            mainWindow_->prepareZmodemUpload(filePaths);
+    QJsonObject structuredContent;
+    structuredContent["prepared"] = prepared;
+    structuredContent["filePaths"] =
+            QJsonArray::fromStringList(filePaths);
+    return makeResponse(
+            structuredContent,
+            !prepared,
+            prepared
+                    ? QString()
+                    : tr("Failed to prepare ZMODEM upload. Check the current connection, file paths, and transfer state."));
+}
+
+McpToolRegistry::ToolResponse
+McpToolRegistry::prepareZmodemDownload(
+        const QJsonObject &arguments) const {
+    const QString directoryPath =
+            arguments.value("directoryPath").toString();
+    if (directoryPath.isEmpty()) {
+        return makeErrorResponse(
+                tr("directoryPath is required."));
+    }
+
+    const bool prepared =
+            mainWindow_->prepareZmodemDownload(
+                    directoryPath);
+    QJsonObject structuredContent;
+    structuredContent["prepared"] = prepared;
+    structuredContent["directoryPath"] = directoryPath;
+    return makeResponse(
+            structuredContent,
+            !prepared,
+            prepared
+                    ? QString()
+                    : tr("Failed to prepare ZMODEM download. Check the current connection, directory path, and transfer state."));
 }
 
 void McpToolRegistry::waitForString(const QJsonObject &arguments, const ToolCallback &callback) {

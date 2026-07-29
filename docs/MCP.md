@@ -126,10 +126,32 @@ The MCP endpoint is intended for local automation only.
 | `qshell_get_screen_text` | Return visible text from the current terminal screen. |
 | `qshell_get_last_line` | Return the last visible terminal line. |
 | `qshell_clear_screen` | Clear the current terminal screen. |
+| `qshell_zmodem_upload` | Set `filePaths` for the next remote `rz` transfer without opening a file chooser. |
+| `qshell_zmodem_download` | Set a writable local `directoryPath` for the next remote `sz` transfer without opening a directory chooser. |
 | `qshell_wait_for_string` | Wait for `text` in terminal output until `timeoutMs` or `timeoutSeconds`. |
 | `qshell_wait_for_regex` | Wait for `pattern` in terminal output until `timeoutMs` or `timeoutSeconds`. |
 
 All tool results include MCP `content` text and `structuredContent` JSON. Operational failures, such as no current terminal or a timeout, are returned as tool results. JSON-RPC protocol errors, such as unknown methods or malformed requests, are returned as JSON-RPC errors.
+
+The ZMODEM tools prepare one transfer on the current connected terminal. Call
+the preparation tool before using `qshell_send_text` to run `rz` or `sz`.
+The download directory must already exist and be writable. A prepared path is
+consumed by the next matching ZMODEM handshake; transfers started without a
+matching preparation keep the normal interactive chooser behavior.
+
+For example, prepare a download and then start `sz` on the remote terminal:
+
+```json
+{"name":"qshell_zmodem_download","arguments":{"directoryPath":"/tmp/downloads"}}
+{"name":"qshell_send_text","arguments":{"text":"sz /var/log/app.log\\r"}}
+```
+
+Prepare one or more uploads before starting remote `rz`:
+
+```json
+{"name":"qshell_zmodem_upload","arguments":{"filePaths":["/tmp/report.txt","/tmp/result.bin"]}}
+{"name":"qshell_send_text","arguments":{"text":"rz\\r"}}
+```
 
 ## Manual Protocol Check
 

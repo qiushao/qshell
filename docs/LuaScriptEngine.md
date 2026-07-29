@@ -304,7 +304,45 @@ qshell.session.disconnect()
 
 ---
 
-### 4. 定时器模块 (`qshell.timer`)
+### 4. ZMODEM 模块 (`qshell.zmodem`)
+
+ZMODEM 接口用于预设下一次传输的本地文件或接收目录。必须先调用
+ZMODEM 接口，再通过终端执行远端的 `rz` 或 `sz` 命令。预设只使用一次，
+传输握手出现后不会弹出文件或目录选择窗口。
+
+#### `qshell.zmodem.upload(filePaths)`
+
+为下一次远端 `rz` 预设一个本地文件，或由字符串组成的本地文件列表。
+
+**返回值**: `boolean` - 当前会话已连接、文件均可读且预设成功时为 `true`
+
+example:
+```lua
+assert(qshell.zmodem.upload({
+    "/tmp/report.txt",
+    "/tmp/result.bin"
+}))
+qshell.screen.sendText("rz\r")
+```
+
+---
+
+#### `qshell.zmodem.download(directoryPath)`
+
+为下一次远端 `sz` 预设本地接收目录。目录必须已经存在并且可写；远端文件名
+保持不变，同名文件仍按现有 ZMODEM 规则生成带编号的新文件名。
+
+**返回值**: `boolean` - 当前会话已连接、目录可写且预设成功时为 `true`
+
+example:
+```lua
+assert(qshell.zmodem.download("/tmp/downloads"))
+qshell.screen.sendText("sz /var/log/app.log\r")
+```
+
+---
+
+### 5. 定时器模块 (`qshell.timer`)
 
 #### `qshell.timer.setTimeout(callback, delayMs)`
 创建单次定时器，在指定延迟后执行回调函数。
@@ -513,4 +551,3 @@ end
 
 qshell.showMessage("exec script finish")
 ```
-

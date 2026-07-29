@@ -9,6 +9,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QMenu>
+#include <QStringList>
 #include <QColorDialog>
 #include <QTimer>
 
@@ -34,6 +35,8 @@ public:
     QString logFilePath() const;
     QString getSessionName() const;
     void populateFileTransferMenu(QMenu *menu);
+    bool prepareZmodemUpload(const QStringList &filePaths);
+    bool prepareZmodemDownload(const QString &directoryPath);
 
     signals:
         void onSessionError(BaseTerminal *terminal);
@@ -123,6 +126,8 @@ private:
     QElapsedTimer zmodemRateTimer_;
     qint64 zmodemRateTransferred_ = 0;
     QString zmodemDirectory_;
+    QStringList pendingZmodemUploadPaths_;
+    QString pendingZmodemDownloadDirectory_;
 };
 
 #endif//QSHELL_BASE_TERMINAL_H
