@@ -32,6 +32,7 @@ public:
     bool isLogging() const;
     QString logFilePath() const;
     QString getSessionName() const;
+    void populateFileTransferMenu(QMenu *menu);
 
     signals:
         void onSessionError(BaseTerminal *terminal);

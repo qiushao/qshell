@@ -96,6 +96,7 @@ private:
     void initMcpServer();
     void restoreLayoutState();
     void exitFullscreen();
+    void updateFileTransferMenu();
     static BaseTerminal *terminalForWidget(QWidget *widget);
 
 #if defined(Q_OS_WIN)
@@ -118,6 +119,7 @@ private:
 
     QMenuBar *mainMenuBar_ = nullptr;
     QMenu *fileMenu_ = nullptr;
+    QMenu *fileTransferMenu_ = nullptr;
     QMenu *editMenu_ = nullptr;
     QMenu *viewMenu_ = nullptr;
     QMenu *scriptMenu_ = nullptr;

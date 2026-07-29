@@ -787,6 +787,77 @@ void BaseTerminal::closeXyModemProgress() {
     xyModemProgress_ = nullptr;
 }
 
+void BaseTerminal::populateFileTransferMenu(QMenu *menu) {
+    const bool canStartFileTransfer =
+            isConnect() && pendingXyModemCommand_ == XyModemCommand::None && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
+
+    QAction *sendXmodemAction =
+            menu->addAction(
+                    tr("通过 XMODEM 发送文件..."));
+    sendXmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            sendXmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemSend(
+                        XyModemTransfer::Protocol::Xmodem);
+            });
+
+    QAction *receiveXmodemAction =
+            menu->addAction(
+                    tr("通过 XMODEM 接收文件..."));
+    receiveXmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            receiveXmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemReceive(
+                        XyModemTransfer::Protocol::Xmodem);
+            });
+
+    menu->addSeparator();
+
+    QAction *sendYmodemAction =
+            menu->addAction(
+                    tr("通过 YMODEM 发送文件..."));
+    sendYmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            sendYmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemSend(
+                        XyModemTransfer::Protocol::Ymodem);
+            });
+
+    QAction *receiveYmodemAction =
+            menu->addAction(
+                    tr("通过 YMODEM 接收文件..."));
+    receiveYmodemAction->setEnabled(canStartFileTransfer);
+    QObject::connect(
+            receiveYmodemAction,
+            &QAction::triggered,
+            this,
+            [this]() {
+                startXyModemReceive(
+                        XyModemTransfer::Protocol::Ymodem);
+            });
+
+    if (xyModemTransfer_->isActive()) {
+        menu->addSeparator();
+        QAction *cancelTransferAction =
+                menu->addAction(
+                        tr("取消当前 X/YMODEM 传输"));
+        QObject::connect(
+                cancelTransferAction,
+                &QAction::triggered,
+                xyModemTransfer_,
+                &XyModemTransfer::cancel);
+    }
+}
+
 void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
     QMenu menu(this);
 
@@ -834,78 +905,6 @@ void BaseTerminal::contextMenuEvent(QContextMenuEvent *event) {
         QObject::connect(includeBufferedLogsAction, &QAction::triggered, this, [this]() {
             onToggleLogging(true);
         });
-    }
-
-    menu.addSeparator();
-
-    QMenu *fileTransferMenu = menu.addMenu(tr("文件传输"));
-    const bool canStartFileTransfer =
-            isConnect() && pendingXyModemCommand_ == XyModemCommand::None && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
-
-    QAction *sendXmodemAction =
-            fileTransferMenu->addAction(
-                    tr("通过 XMODEM 发送文件..."));
-    sendXmodemAction->setEnabled(canStartFileTransfer);
-    QObject::connect(
-            sendXmodemAction,
-            &QAction::triggered,
-            this,
-            [this]() {
-                startXyModemSend(
-                        XyModemTransfer::Protocol::Xmodem);
-            });
-
-    QAction *receiveXmodemAction =
-            fileTransferMenu->addAction(
-                    tr("通过 XMODEM 接收文件..."));
-    receiveXmodemAction->setEnabled(canStartFileTransfer);
-    QObject::connect(
-            receiveXmodemAction,
-            &QAction::triggered,
-            this,
-            [this]() {
-                startXyModemReceive(
-                        XyModemTransfer::Protocol::Xmodem);
-            });
-
-    fileTransferMenu->addSeparator();
-
-    QAction *sendYmodemAction =
-            fileTransferMenu->addAction(
-                    tr("通过 YMODEM 发送文件..."));
-    sendYmodemAction->setEnabled(canStartFileTransfer);
-    QObject::connect(
-            sendYmodemAction,
-            &QAction::triggered,
-            this,
-            [this]() {
-                startXyModemSend(
-                        XyModemTransfer::Protocol::Ymodem);
-            });
-
-    QAction *receiveYmodemAction =
-            fileTransferMenu->addAction(
-                    tr("通过 YMODEM 接收文件..."));
-    receiveYmodemAction->setEnabled(canStartFileTransfer);
-    QObject::connect(
-            receiveYmodemAction,
-            &QAction::triggered,
-            this,
-            [this]() {
-                startXyModemReceive(
-                        XyModemTransfer::Protocol::Ymodem);
-            });
-
-    if (xyModemTransfer_->isActive()) {
-        fileTransferMenu->addSeparator();
-        QAction *cancelTransferAction =
-                fileTransferMenu->addAction(
-                        tr("取消当前 X/YMODEM 传输"));
-        QObject::connect(
-                cancelTransferAction,
-                &QAction::triggered,
-                xyModemTransfer_,
-                &XyModemTransfer::cancel);
     }
 
     menu.addSeparator();

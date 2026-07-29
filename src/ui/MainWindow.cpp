@@ -362,7 +362,11 @@ void MainWindow::initMenu() {
     fileMenu_->addSeparator();
     fileMenu_->addAction(connectAction_);
     fileMenu_->addAction(disConnectAction_);
+    fileTransferMenu_ = fileMenu_->addMenu(tr("文件传输"));
+    fileMenu_->addSeparator();
     fileMenu_->addAction(exitAction_);
+    connect(fileMenu_, &QMenu::aboutToShow,
+            this, &MainWindow::updateFileTransferMenu);
 
     editMenu_ = new QMenu(tr("Edit"), mainMenuBar_);
     mainMenuBar_->addAction(editMenu_->menuAction());
@@ -396,6 +400,14 @@ void MainWindow::initMenu() {
     helpMenu_->addAction(docAction_);
     helpMenu_->addSeparator();
     helpMenu_->addAction(aboutAction_);
+}
+
+void MainWindow::updateFileTransferMenu() {
+    fileTransferMenu_->clear();
+    fileTransferMenu_->setEnabled(currentTab_ != nullptr);
+    if (currentTab_ != nullptr) {
+        currentTab_->populateFileTransferMenu(fileTransferMenu_);
+    }
 }
 
 void MainWindow::initToolbar() {
