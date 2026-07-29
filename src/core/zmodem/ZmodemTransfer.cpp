@@ -14,6 +14,7 @@ constexpr int detectionFlushMilliseconds = 200;
 constexpr int maximumRetries = 5;
 constexpr int maximumProtocolErrors = 10;
 constexpr int defaultUploadPacketsPerWindow = 8;
+constexpr qsizetype maximumQueuedBytesPerTurn = 64 * 1024;
 
 QString formatError(const QString &action, const QFileDevice &file) {
     return QStringLiteral("%1: %2").arg(action, file.errorString());
@@ -27,6 +28,9 @@ ZmodemTransfer::ZmodemTransfer(QObject *parent)
     timeout_.setInterval(transferTimeoutMilliseconds);
     connect(&timeout_, &QTimer::timeout,
             this, &ZmodemTransfer::onTimeout);
+    queuedDataTimer_.setSingleShot(true);
+    connect(&queuedDataTimer_, &QTimer::timeout,
+            this, &ZmodemTransfer::processQueuedData);
     detectionFlushTimer_.setSingleShot(true);
     detectionFlushTimer_.setInterval(detectionFlushMilliseconds);
     connect(&detectionFlushTimer_, &QTimer::timeout,
@@ -69,6 +73,16 @@ QByteArray ZmodemTransfer::consume(const QByteArray &data) {
         detectionFlushTimer_.start();
     }
     return terminalOutput;
+}
+
+void ZmodemTransfer::enqueueData(const QByteArray &data) {
+    if (data.isEmpty()) {
+        return;
+    }
+    queuedData_.enqueue(data);
+    if (!queuedDataTimer_.isActive()) {
+        queuedDataTimer_.start(0);
+    }
 }
 
 bool ZmodemTransfer::isActive() const {
@@ -883,6 +897,8 @@ void ZmodemTransfer::failTransfer(const QString &message,
     if (notifyPeer) {
         sendImmediate(Zmodem::abortSequence());
     }
+    queuedDataTimer_.stop();
+    queuedData_.clear();
     resetTransfer();
     emit transferFailed(failedDirection, message);
 }
@@ -892,6 +908,8 @@ void ZmodemTransfer::cancelTransfer(bool notifyPeer) {
     if (notifyPeer) {
         sendImmediate(Zmodem::abortSequence());
     }
+    queuedDataTimer_.stop();
+    queuedData_.clear();
     resetTransfer();
     emit transferCanceled(canceledDirection);
 }
@@ -916,6 +934,29 @@ void ZmodemTransfer::resetTransfer(bool resetParser) {
         parser_.reset();
     }
     state_ = State::Idle;
+}
+
+void ZmodemTransfer::processQueuedData() {
+    qsizetype remaining = maximumQueuedBytesPerTurn;
+    QByteArray terminalData;
+    while (remaining > 0 && !queuedData_.isEmpty()) {
+        QByteArray &first = queuedData_.head();
+        const qsizetype size =
+                std::min(first.size(), remaining);
+        const QByteArray data = first.left(size);
+        first.remove(0, size);
+        if (first.isEmpty()) {
+            queuedData_.dequeue();
+        }
+        terminalData.append(consume(data));
+        remaining -= size;
+    }
+    if (!terminalData.isEmpty()) {
+        emit terminalDataReady(terminalData);
+    }
+    if (!queuedData_.isEmpty()) {
+        queuedDataTimer_.start(0);
+    }
 }
 
 void ZmodemTransfer::flushPendingTerminalData() {

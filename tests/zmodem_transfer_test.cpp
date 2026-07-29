@@ -194,6 +194,47 @@ bool testProtocolCodec() {
     return true;
 }
 
+bool testQueuedConsumptionYieldsToEventLoop() {
+    ZmodemTransfer transfer;
+    const QByteArray input(512 * 1024, 'x');
+    QByteArray output;
+    int outputBatches = 0;
+    bool eventHandled = false;
+
+    QObject::connect(
+            &transfer,
+            &ZmodemTransfer::terminalDataReady,
+            &transfer,
+            [&output, &outputBatches](const QByteArray &data) {
+                output.append(data);
+                ++outputBatches;
+            });
+
+    transfer.enqueueData(input);
+    if (!output.isEmpty()) {
+        qCritical() << "queued input was processed synchronously";
+        return false;
+    }
+    QTimer::singleShot(
+            0,
+            &transfer,
+            [&eventHandled]() {
+                eventHandled = true;
+            });
+
+    if (!runUntil(
+                [&]() {
+                    return output.size() == input.size();
+                },
+                1000) ||
+        output != input || outputBatches < 2 || !eventHandled) {
+        qCritical() << "queued input did not yield to the event loop"
+                    << output.size() << outputBatches << eventHandled;
+        return false;
+    }
+    return true;
+}
+
 bool testInMemoryTransfer() {
     QTemporaryDir sourceDirectory;
     QTemporaryDir destinationDirectory;
@@ -463,7 +504,8 @@ bool testLrzszDownload(const QString &szExecutable,
 
     QObject::connect(&process, &QProcess::readyReadStandardOutput,
                      &receiver, [&]() {
-                         receiver.consume(process.readAllStandardOutput());
+                         receiver.enqueueData(
+                                 process.readAllStandardOutput());
                      });
     QObject::connect(&process, &QProcess::readyReadStandardError,
                      &process, [&]() {
@@ -588,7 +630,7 @@ bool testLrzszUpload(const QString &rzExecutable,
 
     QObject::connect(&process, &QProcess::readyReadStandardOutput,
                      &sender, [&]() {
-                         sender.consume(
+                         sender.enqueueData(
                                  process.readAllStandardOutput());
                      });
     QObject::connect(&process, &QProcess::readyReadStandardError,
@@ -669,7 +711,10 @@ bool testLrzszUpload(const QString &rzExecutable,
 int main(int argc, char *argv[]) {
     QCoreApplication application(argc, argv);
 
-    if (!testProtocolCodec() || !testInMemoryTransfer() || !testCanceledDownloadCleanup()) {
+    if (!testProtocolCodec() ||
+        !testQueuedConsumptionYieldsToEventLoop() ||
+        !testInMemoryTransfer() ||
+        !testCanceledDownloadCleanup()) {
         return 1;
     }
 

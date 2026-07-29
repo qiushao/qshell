@@ -421,11 +421,7 @@ void BaseTerminal::receiveBackendData(const QByteArray &data) {
 
 void BaseTerminal::displayBackendData(
         const QByteArray &data) {
-    const QByteArray terminalData = zmodemTransfer_->consume(data);
-    if (!terminalData.isEmpty()) {
-        recvData(terminalData.constData(),
-                 static_cast<int>(terminalData.size()));
-    }
+    zmodemTransfer_->enqueueData(data);
 }
 
 void BaseTerminal::beginPendingXyModemCommand(
@@ -574,12 +570,12 @@ void BaseTerminal::onZmodemFileStarted(
                          QStringLiteral("--"),
                          QStringLiteral("--")));
     zmodemProgress_->setCancelButtonText(tr("取消"));
-    zmodemProgress_->setRange(0, size == 0 ? 0 : 1000);
+    zmodemProgress_->setRange(0, size <= 0 ? 0 : 1000);
     zmodemProgress_->setValue(0);
     zmodemProgress_->setMinimumDuration(0);
     zmodemProgress_->setAutoClose(false);
     zmodemProgress_->setAutoReset(false);
-    zmodemProgress_->setWindowModality(Qt::WindowModal);
+    zmodemProgress_->setWindowModality(Qt::NonModal);
     QObject::connect(zmodemProgress_, &QProgressDialog::canceled,
                      zmodemTransfer_, &ZmodemTransfer::cancel);
     zmodemProgress_->show();
@@ -600,7 +596,10 @@ void BaseTerminal::onZmodemFileProgress(
             size > 0 && transferred >= size;
     const bool hasNewCompletedBytes =
             fileComplete && transferred > zmodemRateTransferred_;
-    if (elapsedMilliseconds > 0 && (elapsedMilliseconds >= zmodemRateUpdateIntervalMilliseconds || hasNewCompletedBytes)) {
+    if (elapsedMilliseconds < zmodemRateUpdateIntervalMilliseconds && !hasNewCompletedBytes) {
+        return;
+    }
+    if (elapsedMilliseconds > 0) {
         const qint64 transferredSinceUpdate =
                 std::max<qint64>(
                         0,

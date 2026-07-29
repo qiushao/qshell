@@ -5,6 +5,7 @@
 
 #include <QFile>
 #include <QObject>
+#include <QQueue>
 #include <QSaveFile>
 #include <QStringList>
 #include <QTimer>
@@ -24,6 +25,7 @@ public:
     explicit ZmodemTransfer(QObject *parent = nullptr);
 
     QByteArray consume(const QByteArray &data);
+    void enqueueData(const QByteArray &data);
     bool isActive() const;
     Direction direction() const;
 
@@ -56,6 +58,7 @@ signals:
     void terminalDataReady(const QByteArray &data);
 
 private slots:
+    void processQueuedData();
     void flushPendingTerminalData();
     void onTimeout();
     void pumpUpload();
@@ -113,7 +116,9 @@ private:
     Direction direction_ = Direction::Download;
     Zmodem::Header initialHeader_;
     QTimer timeout_;
+    QTimer queuedDataTimer_;
     QTimer detectionFlushTimer_;
+    QQueue<QByteArray> queuedData_;
     QByteArray retryPacket_;
     int retryCount_ = 0;
     int protocolErrorCount_ = 0;
