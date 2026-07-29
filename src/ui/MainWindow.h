@@ -211,6 +211,7 @@ private:
     // full screen
     bool isFullscreen_ = false;
     QWidget *fullscreenWidget_ = nullptr;
+    QWidget *fullscreenWindow_ = nullptr;
     QShortcut *escShortcut_ = nullptr;
 
     LuaScriptEngine *luaEngine_ = nullptr;

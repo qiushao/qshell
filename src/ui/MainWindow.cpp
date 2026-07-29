@@ -157,6 +157,30 @@ void setEqualSplitterSizes(QSplitter *splitter) {
     splitter->setSizes(equalSizes);
 }
 
+void syncFullscreenContentGeometry(QWidget *window,
+                                   QWidget *content) {
+    if (window == nullptr || content == nullptr) {
+        return;
+    }
+
+    const QRect contentGeometry = window->contentsRect();
+    if (QLayout *layout = window->layout()) {
+        layout->setGeometry(contentGeometry);
+        layout->activate();
+    }
+    content->setGeometry(contentGeometry);
+
+    QList<QSplitter *> splitters =
+            content->findChildren<QSplitter *>();
+    if (auto *rootSplitter =
+                qobject_cast<QSplitter *>(content)) {
+        splitters.prepend(rootSplitter);
+    }
+    for (QSplitter *splitter: splitters) {
+        splitter->refresh();
+    }
+}
+
 }// namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -1273,13 +1297,19 @@ void MainWindow::onFullscreenAction() {
         return;
     }
 
+    const int index = tabWidget_->currentIndex();
+    QWidget *root =
+            index < 0 ? nullptr : tabWidget_->widget(index);
     BaseTerminal *terminal = currentTab_;
-    QWidget *root = tabRootForTerminal(terminal);
-    const int index = root == nullptr ? -1 : tabWidget_->indexOf(root);
-    if (terminal == nullptr || index < 0) {
+    if (!containsTerminal(root, terminal)) {
+        terminal = activeTerminalInWidget(root);
+    }
+    if (root == nullptr || terminal == nullptr) {
         return;
     }
 
+    setActiveEmptySplitPane(nullptr);
+    setCurrentTerminal(terminal);
     root->setProperty("tabIndex", index);
     root->setProperty("tabText", tabWidget_->tabText(index));
     root->setProperty("tabIcon", tabWidget_->tabIcon(index));
@@ -1290,11 +1320,29 @@ void MainWindow::onFullscreenAction() {
         tabWidget_->removeTab(index);
     }
 
+    auto *fullscreenWindow =
+            new QWidget(nullptr, Qt::Window);
+    auto *fullscreenLayout =
+            new QVBoxLayout(fullscreenWindow);
+    fullscreenLayout->setContentsMargins(0, 0, 0, 0);
+    fullscreenLayout->setSpacing(0);
+    fullscreenLayout->addWidget(root);
+
     fullscreenWidget_ = root;
+    fullscreenWindow_ = fullscreenWindow;
     isFullscreen_ = true;
-    root->setParent(nullptr);
-    root->setWindowFlags(Qt::Window);
-    root->showFullScreen();
+    fullscreenWindow->showFullScreen();
+    root->show();
+    root->raise();
+    syncFullscreenContentGeometry(
+            fullscreenWindow, root);
+    QTimer::singleShot(
+            0, fullscreenWindow,
+            [fullscreenWindow,
+             fullscreenRoot = QPointer<QWidget>(root)]() {
+                syncFullscreenContentGeometry(
+                        fullscreenWindow, fullscreenRoot);
+            });
 
     auto *exitBtn = new QPushButton(terminal);
     exitBtn->setObjectName("exitFullscreenBtn");
@@ -1318,7 +1366,8 @@ void MainWindow::onFullscreenAction() {
     connect(exitBtn, &QPushButton::clicked,
             this, &MainWindow::exitFullscreen);
 
-    escShortcut_ = new QShortcut(QKeySequence(Qt::Key_Escape), root);
+    escShortcut_ = new QShortcut(
+            QKeySequence(Qt::Key_Escape), fullscreenWindow);
     escShortcut_->setContext(Qt::WindowShortcut);
     connect(escShortcut_, &QShortcut::activated,
             this, &MainWindow::exitFullscreen);
@@ -1332,6 +1381,7 @@ void MainWindow::exitFullscreen() {
     }
 
     QWidget *root = fullscreenWidget_;
+    QWidget *fullscreenWindow = fullscreenWindow_;
     BaseTerminal *terminal = currentTab_;
     if (!containsTerminal(root, terminal)) {
         terminal = firstTerminalInWidget(root);
@@ -1348,16 +1398,20 @@ void MainWindow::exitFullscreen() {
     const QString tabText = root->property("tabText").toString();
     const auto tabIcon = root->property("tabIcon").value<QIcon>();
 
-    root->setWindowFlags(Qt::Widget);
+    if (fullscreenWindow != nullptr) {
+        fullscreenWindow->hide();
+    }
     {
         QSignalBlocker blocker(tabWidget_);
         tabWidget_->insertTab(index, root, tabIcon, tabText);
         tabWidget_->setCurrentIndex(index);
     }
+    delete fullscreenWindow;
     root->show();
     setSplitActionsEnabled(root, true);
 
     fullscreenWidget_ = nullptr;
+    fullscreenWindow_ = nullptr;
     isFullscreen_ = false;
     setCurrentTerminal(terminal);
     if (terminal != nullptr) {
