@@ -10,6 +10,18 @@ add_test(NAME qtermwidget_on_new_line_test
 set_tests_properties(qtermwidget_on_new_line_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+add_executable(global_settings_test
+        global_settings_test.cpp)
+
+target_include_directories(global_settings_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(global_settings_test
+        Qt::Core)
+
+add_test(NAME global_settings_test
+        COMMAND global_settings_test)
+
 add_executable(zmodem_transfer_test
         zmodem_transfer_test.cpp
         ../src/core/zmodem/ZmodemProtocol.cpp

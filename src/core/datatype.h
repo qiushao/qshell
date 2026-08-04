@@ -279,6 +279,8 @@ struct GlobalSettings {
     bool copyOnSelect = false;
     bool debug = true;
     bool logTimestamp = true;
+    bool autoSaveLog = false;
+    QString autoSaveLogDirectory;
     bool mcpEnabled = false;
     int mcpPort = 8765;
     QString mcpBearerToken;
@@ -291,6 +293,8 @@ struct GlobalSettings {
         obj["copyOnSelect"] = copyOnSelect;
         obj["debug"] = debug;
         obj["logTimestamp"] = logTimestamp;
+        obj["autoSaveLog"] = autoSaveLog;
+        obj["autoSaveLogDirectory"] = autoSaveLogDirectory;
         obj["mcpEnabled"] = mcpEnabled;
         obj["mcpPort"] = mcpPort;
         obj["mcpBearerToken"] = mcpBearerToken;
@@ -305,6 +309,8 @@ struct GlobalSettings {
         settings.copyOnSelect = obj["copyOnSelect"].toBool();
         settings.debug = obj["debug"].toBool();
         settings.logTimestamp = obj["logTimestamp"].toBool(true);
+        settings.autoSaveLog = obj["autoSaveLog"].toBool(false);
+        settings.autoSaveLogDirectory = obj["autoSaveLogDirectory"].toString();
         settings.mcpEnabled = obj["mcpEnabled"].toBool(false);
         settings.mcpPort = obj["mcpPort"].toInt(8765);
         settings.mcpBearerToken = obj["mcpBearerToken"].toString();

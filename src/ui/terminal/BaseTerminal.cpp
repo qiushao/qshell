@@ -14,6 +14,7 @@
 #include <QProcess>
 #include <QProgressDialog>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QTextStream>
 #include <QTimer>
@@ -386,6 +387,36 @@ QString BaseTerminal::logFilePath() const {
 
 QString BaseTerminal::getSessionName() const {
     return sessionData_.name;
+}
+
+void BaseTerminal::startAutoLogging() {
+    const GlobalSettings settings =
+            ConfigManager::instance()->globalSettings();
+    if (!settings.autoSaveLog ||
+        settings.autoSaveLogDirectory.isEmpty()) {
+        return;
+    }
+
+    QString sessionName = sessionData_.name.trimmed();
+    sessionName.replace(
+            QRegularExpression(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])")),
+            QStringLiteral("_"));
+    while (sessionName.endsWith(QLatin1Char('.')) ||
+           sessionName.endsWith(QLatin1Char(' '))) {
+        sessionName.chop(1);
+    }
+    if (sessionName.isEmpty()) {
+        sessionName = QStringLiteral("session");
+    }
+
+    const QString fileName =
+            QStringLiteral("%1_%2.log")
+                    .arg(sessionName,
+                         QDateTime::currentDateTime().toString(
+                                 QStringLiteral("yyyyMMdd_HHmmss_zzz")));
+    startLogging(
+            QDir(settings.autoSaveLogDirectory).filePath(fileName),
+            false);
 }
 
 void BaseTerminal::onDisplayOutput(const QString &line) {

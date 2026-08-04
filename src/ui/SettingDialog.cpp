@@ -3,6 +3,8 @@
 #include "core/McpShellEnvironment.h"
 #include "qtermwidget.h"
 
+#include <QDir>
+#include <QFileDialog>
 #include <QIntValidator>
 #include <QMessageBox>
 
@@ -17,6 +19,8 @@ SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
     debugCheckBox_->setChecked(settings.debug);
     logTimestampCheckBox_->setChecked(settings.logTimestamp);
+    autoSaveLogDirectoryEdit_->setText(settings.autoSaveLogDirectory);
+    autoSaveLogCheckBox_->setChecked(settings.autoSaveLog);
     mcpPortEdit_->setText(QString::number(settings.mcpPort));
     mcpBearerTokenEdit_->setText(settings.mcpBearerToken);
     mcpEnabledCheckBox_->setChecked(settings.mcpEnabled);
@@ -52,6 +56,18 @@ void SettingDialog::initWidgets() {
     logTimestampCheckBox_->setToolTip(tr("Add a system timestamp before each saved log line"));
     formLayout_->addRow(tr("Log Timestamp:"), logTimestampCheckBox_);
 
+    autoSaveLogCheckBox_ = new QCheckBox(this);
+    autoSaveLogCheckBox_->setToolTip(tr("Automatically save logs for newly opened sessions"));
+    formLayout_->addRow(tr("Auto Save Log:"), autoSaveLogCheckBox_);
+
+    autoSaveLogDirectoryEdit_ = new QLineEdit(this);
+    autoSaveLogDirectoryEdit_->setReadOnly(true);
+    selectAutoSaveLogDirectoryButton_ = new QPushButton(tr("Browse..."), this);
+    autoSaveLogDirectoryLayout_ = new QHBoxLayout();
+    autoSaveLogDirectoryLayout_->addWidget(autoSaveLogDirectoryEdit_);
+    autoSaveLogDirectoryLayout_->addWidget(selectAutoSaveLogDirectoryButton_);
+    formLayout_->addRow(tr("Log Directory:"), autoSaveLogDirectoryLayout_);
+
     mcpEnabledCheckBox_ = new QCheckBox(this);
     mcpEnabledCheckBox_->setToolTip(tr("Enable local MCP control endpoint on 127.0.0.1"));
     formLayout_->addRow(tr("Enable MCP:"), mcpEnabledCheckBox_);
@@ -79,6 +95,31 @@ void SettingDialog::initWidgets() {
 
     QObject::connect(okButton_, &QPushButton::clicked, this, &SettingDialog::onOK);
     QObject::connect(cancelButton_, &QPushButton::clicked, this, &SettingDialog::onCancel);
+    const auto selectAutoSaveLogDirectory = [this]() {
+        const QString currentDirectory = autoSaveLogDirectoryEdit_->text().isEmpty()
+                                                 ? QDir::homePath()
+                                                 : autoSaveLogDirectoryEdit_->text();
+        const QString directory = QFileDialog::getExistingDirectory(
+                this, tr("Select Log Directory"), currentDirectory);
+        if (!directory.isEmpty()) {
+            autoSaveLogDirectoryEdit_->setText(directory);
+        }
+    };
+    QObject::connect(selectAutoSaveLogDirectoryButton_, &QPushButton::clicked,
+                     this, selectAutoSaveLogDirectory);
+    QObject::connect(autoSaveLogCheckBox_, &QCheckBox::toggled, this,
+                     [this, selectAutoSaveLogDirectory](bool enabled) {
+                         autoSaveLogDirectoryEdit_->setEnabled(enabled);
+                         selectAutoSaveLogDirectoryButton_->setEnabled(enabled);
+                         if (enabled && autoSaveLogDirectoryEdit_->text().isEmpty()) {
+                             selectAutoSaveLogDirectory();
+                             if (autoSaveLogDirectoryEdit_->text().isEmpty()) {
+                                 autoSaveLogCheckBox_->setChecked(false);
+                             }
+                         }
+                     });
+    autoSaveLogDirectoryEdit_->setEnabled(false);
+    selectAutoSaveLogDirectoryButton_->setEnabled(false);
     QObject::connect(regenerateMcpTokenButton_, &QPushButton::clicked, this, [this]() {
         mcpBearerTokenEdit_->setText(ConfigManager::generateMcpBearerToken());
     });
@@ -104,6 +145,8 @@ void SettingDialog::onOK() {
     settings.copyOnSelect = copyOnSelectCheckBox_->isChecked();
     settings.debug = debugCheckBox_->isChecked();
     settings.logTimestamp = logTimestampCheckBox_->isChecked();
+    settings.autoSaveLog = autoSaveLogCheckBox_->isChecked();
+    settings.autoSaveLogDirectory = autoSaveLogDirectoryEdit_->text();
     settings.mcpEnabled = mcpEnabledCheckBox_->isChecked();
     settings.mcpPort = mcpPortEdit_->text().toInt();
     if (settings.mcpPort < 1 || settings.mcpPort > 65535) {

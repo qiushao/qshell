@@ -35,6 +35,7 @@ public:
     bool isLogging() const;
     QString logFilePath() const;
     QString getSessionName() const;
+    void startAutoLogging();
     void populateFileTransferMenu(QMenu *menu);
     bool prepareZmodemUpload(const QStringList &filePaths);
     bool prepareZmodemDownload(const QString &directoryPath);

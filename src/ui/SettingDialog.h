@@ -34,6 +34,10 @@ private:
     QCheckBox *copyOnSelectCheckBox_ = nullptr;
     QCheckBox *debugCheckBox_ = nullptr;
     QCheckBox *logTimestampCheckBox_ = nullptr;
+    QCheckBox *autoSaveLogCheckBox_ = nullptr;
+    QLineEdit *autoSaveLogDirectoryEdit_ = nullptr;
+    QPushButton *selectAutoSaveLogDirectoryButton_ = nullptr;
+    QHBoxLayout *autoSaveLogDirectoryLayout_ = nullptr;
     QCheckBox *mcpEnabledCheckBox_ = nullptr;
     QLineEdit *mcpPortEdit_ = nullptr;
     QLineEdit *mcpBearerTokenEdit_ = nullptr;

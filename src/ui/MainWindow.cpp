@@ -1836,6 +1836,7 @@ bool MainWindow::openSessionById(const QString &sessionId) {
     }
     setCurrentTerminal(terminal);
     terminal->setFocus();
+    terminal->startAutoLogging();
     terminal->connect();
     setCurrentTerminal(terminal);
     qDebug() << "onOpenSession" << session.name
