@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QIntValidator>
+#include <QLabel>
 #include <QMessageBox>
 
 SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
@@ -58,23 +59,27 @@ void SettingDialog::initWidgets() {
 
     autoSaveLogCheckBox_ = new QCheckBox(this);
     autoSaveLogCheckBox_->setToolTip(tr("Automatically save logs for newly opened sessions"));
-    formLayout_->addRow(tr("Auto Save Log:"), autoSaveLogCheckBox_);
 
     autoSaveLogDirectoryEdit_ = new QLineEdit(this);
     autoSaveLogDirectoryEdit_->setReadOnly(true);
     selectAutoSaveLogDirectoryButton_ = new QPushButton(tr("Browse..."), this);
     autoSaveLogDirectoryLayout_ = new QHBoxLayout();
+    autoSaveLogDirectoryLayout_->addWidget(autoSaveLogCheckBox_);
+    autoSaveLogDirectoryLayout_->addWidget(new QLabel(tr("Log Directory:"), this));
     autoSaveLogDirectoryLayout_->addWidget(autoSaveLogDirectoryEdit_);
     autoSaveLogDirectoryLayout_->addWidget(selectAutoSaveLogDirectoryButton_);
-    formLayout_->addRow(tr("Log Directory:"), autoSaveLogDirectoryLayout_);
+    formLayout_->addRow(tr("Auto Save Log:"), autoSaveLogDirectoryLayout_);
 
     mcpEnabledCheckBox_ = new QCheckBox(this);
     mcpEnabledCheckBox_->setToolTip(tr("Enable local MCP control endpoint on 127.0.0.1"));
-    formLayout_->addRow(tr("Enable MCP:"), mcpEnabledCheckBox_);
 
     mcpPortEdit_ = new QLineEdit(this);
     mcpPortEdit_->setValidator(new QIntValidator(1, 65535, mcpPortEdit_));
-    formLayout_->addRow(tr("MCP Port:"), mcpPortEdit_);
+    auto *mcpEnabledLayout = new QHBoxLayout();
+    mcpEnabledLayout->addWidget(mcpEnabledCheckBox_);
+    mcpEnabledLayout->addWidget(new QLabel(tr("MCP Port:"), this));
+    mcpEnabledLayout->addWidget(mcpPortEdit_);
+    formLayout_->addRow(tr("Enable MCP:"), mcpEnabledLayout);
 
     mcpBearerTokenEdit_ = new QLineEdit(this);
     mcpBearerTokenEdit_->setReadOnly(true);
