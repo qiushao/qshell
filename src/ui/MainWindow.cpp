@@ -175,6 +175,7 @@ void saveFullscreenExitButtonPosition(
     QSettings settings;
     settings.setValue(fullscreenExitButtonPositionKey,
                       normalizedPosition);
+    settings.sync();
 }
 
 QList<BaseTerminal *> terminalsInWidget(QWidget *widget) {
@@ -1414,6 +1415,18 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         }
     }
 
+    if (isFullscreen_ && watched == fullscreenWindow_ &&
+        event->type() == QEvent::Resize) {
+        auto *exitButton =
+                fullscreenWindow_->findChild<QPushButton *>(
+                        "exitFullscreenBtn");
+        restoreFullscreenExitButtonPosition(
+                exitButton, fullscreenWindow_);
+        if (exitButton != nullptr) {
+            exitButton->raise();
+        }
+    }
+
     if (isFullscreen_ && watched == fullscreenWidget_ && event->type() == QEvent::KeyPress) {
         auto *keyEvent = dynamic_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
@@ -1469,6 +1482,7 @@ void MainWindow::onFullscreenAction() {
     fullscreenWidget_ = root;
     fullscreenWindow_ = fullscreenWindow;
     isFullscreen_ = true;
+    fullscreenWindow->installEventFilter(this);
     fullscreenWindow->showFullScreen();
     root->show();
     root->raise();
@@ -1550,8 +1564,12 @@ void MainWindow::exitFullscreen() {
             fullscreenWindow == nullptr
                     ? root
                     : fullscreenWindow;
-    delete buttonContainer->findChild<QPushButton *>(
-            "exitFullscreenBtn");
+    auto *exitButton =
+            buttonContainer->findChild<QPushButton *>(
+                    "exitFullscreenBtn");
+    saveFullscreenExitButtonPosition(
+            exitButton, buttonContainer);
+    delete exitButton;
     delete escShortcut_;
     escShortcut_ = nullptr;
     delete fullscreenShortcut_;
