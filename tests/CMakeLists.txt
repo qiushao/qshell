@@ -22,6 +22,20 @@ target_link_libraries(global_settings_test
 add_test(NAME global_settings_test
         COMMAND global_settings_test)
 
+add_executable(terminal_line_timestamp_test
+        terminal_line_timestamp_test.cpp
+        ../src/core/TerminalLineTimestamp.cpp
+        ../src/core/TerminalLineTimestamp.h)
+
+target_include_directories(terminal_line_timestamp_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src)
+
+target_link_libraries(terminal_line_timestamp_test
+        Qt::Core)
+
+add_test(NAME terminal_line_timestamp_test
+        COMMAND terminal_line_timestamp_test)
+
 add_executable(zmodem_transfer_test
         zmodem_transfer_test.cpp
         ../src/core/zmodem/ZmodemProtocol.cpp

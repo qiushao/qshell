@@ -20,6 +20,7 @@ SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
     debugCheckBox_->setChecked(settings.debug);
     logTimestampCheckBox_->setChecked(settings.logTimestamp);
+    terminalTimestampCheckBox_->setChecked(settings.terminalTimestamp);
     autoSaveLogDirectoryEdit_->setText(settings.autoSaveLogDirectory);
     autoSaveLogCheckBox_->setChecked(settings.autoSaveLog);
     mcpPortEdit_->setText(QString::number(settings.mcpPort));
@@ -52,6 +53,11 @@ void SettingDialog::initWidgets() {
     debugCheckBox_ = new QCheckBox(this);
     debugCheckBox_->setToolTip(tr("Enable debug log console"));
     formLayout_->addRow(tr("Enable debug"), debugCheckBox_);
+
+    terminalTimestampCheckBox_ = new QCheckBox(this);
+    terminalTimestampCheckBox_->setToolTip(
+            tr("Add a system timestamp before each terminal output line"));
+    formLayout_->addRow(tr("Terminal Timestamp:"), terminalTimestampCheckBox_);
 
     logTimestampCheckBox_ = new QCheckBox(this);
     logTimestampCheckBox_->setToolTip(tr("Add a system timestamp before each saved log line"));
@@ -100,6 +106,13 @@ void SettingDialog::initWidgets() {
 
     QObject::connect(okButton_, &QPushButton::clicked, this, &SettingDialog::onOK);
     QObject::connect(cancelButton_, &QPushButton::clicked, this, &SettingDialog::onCancel);
+    QObject::connect(terminalTimestampCheckBox_, &QCheckBox::toggled, this,
+                     [this](bool enabled) {
+                         if (enabled) {
+                             logTimestampCheckBox_->setChecked(false);
+                         }
+                         logTimestampCheckBox_->setEnabled(!enabled);
+                     });
     const auto selectAutoSaveLogDirectory = [this]() {
         const QString currentDirectory = autoSaveLogDirectoryEdit_->text().isEmpty()
                                                  ? QDir::homePath()
@@ -149,7 +162,8 @@ void SettingDialog::onOK() {
     settings.colorScheme = colorSchemeEdit_->currentText();
     settings.copyOnSelect = copyOnSelectCheckBox_->isChecked();
     settings.debug = debugCheckBox_->isChecked();
-    settings.logTimestamp = logTimestampCheckBox_->isChecked();
+    settings.terminalTimestamp = terminalTimestampCheckBox_->isChecked();
+    settings.logTimestamp = !settings.terminalTimestamp && logTimestampCheckBox_->isChecked();
     settings.autoSaveLog = autoSaveLogCheckBox_->isChecked();
     settings.autoSaveLogDirectory = autoSaveLogDirectoryEdit_->text();
     settings.mcpEnabled = mcpEnabledCheckBox_->isChecked();

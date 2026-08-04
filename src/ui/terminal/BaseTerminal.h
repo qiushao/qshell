@@ -1,6 +1,7 @@
 #ifndef QSHELL_BASE_TERMINAL_H
 #define QSHELL_BASE_TERMINAL_H
 
+#include "core/TerminalLineTimestamp.h"
 #include "core/datatype.h"
 #include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemTransfer.h"
@@ -86,6 +87,7 @@ private:
     void startPendingXyModemTransfer();
     void clearPendingXyModemCommand();
     void displayBackendData(const QByteArray &data);
+    void displayTerminalData(const QByteArray &data);
     void onXyModemFileStarted(XyModemTransfer::Protocol protocol,
                               XyModemTransfer::Direction direction,
                               const QString &fileName,
@@ -114,6 +116,7 @@ private:
     bool logging_ = false;
     QFile *logFile_ = nullptr;
     QString logFilePath_;
+    TerminalLineTimestamp terminalLineTimestamp_;
     XyModemCommandDetector xyModemCommandDetector_;
     XyModemCommand pendingXyModemCommand_ =
             XyModemCommand::None;

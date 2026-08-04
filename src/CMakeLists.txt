@@ -7,6 +7,8 @@ set(SRC_FILES main.cpp
         ui/SettingDialog.cpp
         core/CryptoHelper.cpp
         core/ConfigManager.cpp
+        core/TerminalLineTimestamp.cpp
+        core/TerminalLineTimestamp.h
         core/McpShellEnvironment.cpp
         core/McpShellEnvironment.h
         core/zmodem/ZmodemProtocol.cpp

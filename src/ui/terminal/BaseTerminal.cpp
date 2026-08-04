@@ -252,8 +252,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
                      &ZmodemTransfer::terminalDataReady,
                      this,
                      [this](const QByteArray &data) {
-                         recvData(data.constData(),
-                                  static_cast<int>(data.size()));
+                         displayTerminalData(data);
                      });
     QObject::connect(zmodemTransfer_, &ZmodemTransfer::detected,
                      this, [this](ZmodemTransfer::Direction direction) {
@@ -437,8 +436,7 @@ void BaseTerminal::receiveBackendData(const QByteArray &data) {
         const QByteArray terminalData =
                 xyModemTransfer_->consume(data);
         if (!terminalData.isEmpty()) {
-            recvData(terminalData.constData(),
-                     static_cast<int>(terminalData.size()));
+            displayTerminalData(terminalData);
         }
         return;
     }
@@ -452,6 +450,23 @@ void BaseTerminal::receiveBackendData(const QByteArray &data) {
 void BaseTerminal::displayBackendData(
         const QByteArray &data) {
     zmodemTransfer_->enqueueData(data);
+}
+
+void BaseTerminal::displayTerminalData(
+        const QByteArray &data) {
+    const bool timestampEnabled =
+            ConfigManager::instance()->globalSettings().terminalTimestamp;
+    const QByteArray timestamp =
+            timestampEnabled
+                    ? QDateTime::currentDateTime()
+                              .toString(QStringLiteral("[yyyy-MM-dd HH:mm:ss.zzz] "))
+                              .toUtf8()
+                    : QByteArray();
+    const QByteArray displayData =
+            terminalLineTimestamp_.process(
+                    data, timestampEnabled, timestamp);
+    recvData(displayData.constData(),
+             static_cast<int>(displayData.size()));
 }
 
 bool BaseTerminal::prepareZmodemUpload(
@@ -876,10 +891,7 @@ void BaseTerminal::startPendingXyModemTransfer() {
             const QByteArray terminalData =
                     xyModemTransfer_->consume(protocolData);
             if (!terminalData.isEmpty()) {
-                recvData(
-                        terminalData.constData(),
-                        static_cast<int>(
-                                terminalData.size()));
+                displayTerminalData(terminalData);
             }
         }
         return;
