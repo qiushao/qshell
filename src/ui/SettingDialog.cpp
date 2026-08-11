@@ -56,8 +56,8 @@ void SettingDialog::initWidgets() {
 
     terminalTimestampCheckBox_ = new QCheckBox(this);
     terminalTimestampCheckBox_->setToolTip(
-            tr("Add a system timestamp before each terminal output line"));
-    formLayout_->addRow(tr("Terminal Timestamp:"), terminalTimestampCheckBox_);
+            tr("Add a system timestamp before each serial terminal output line"));
+    formLayout_->addRow(tr("Serial Terminal Timestamp:"), terminalTimestampCheckBox_);
 
     logTimestampCheckBox_ = new QCheckBox(this);
     logTimestampCheckBox_->setToolTip(tr("Add a system timestamp before each saved log line"));

@@ -455,7 +455,8 @@ void BaseTerminal::displayBackendData(
 void BaseTerminal::displayTerminalData(
         const QByteArray &data) {
     const bool timestampEnabled =
-            ConfigManager::instance()->globalSettings().terminalTimestamp;
+            ConfigManager::instance()->globalSettings().terminalTimestamp &&
+            sessionData_.protocolType == ProtocolType::Serial;
     const QByteArray timestamp =
             timestampEnabled
                     ? QDateTime::currentDateTime()
