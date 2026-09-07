@@ -1,7 +1,6 @@
 #ifndef QSHELL_BASE_TERMINAL_H
 #define QSHELL_BASE_TERMINAL_H
 
-#include "core/TerminalLineTimestamp.h"
 #include "core/datatype.h"
 #include "core/xymodem/XyModemCommandDetector.h"
 #include "core/xymodem/XyModemTransfer.h"
@@ -49,7 +48,7 @@ signals:
     void closeSplitRequested(BaseTerminal *terminal);
 
 protected:
-    void onDisplayOutput(const QString &line);
+    void onDisplayOutput(const QString &line, const QString &timestamp);
     void onCopyAvailable(bool copyAvailable);
     void receiveBackendData(const QByteArray &data);
     virtual void writeToBackend(const QByteArray &data) = 0;
@@ -63,7 +62,7 @@ private slots:
 private:
     void startLogging(const QString &filePath, bool includeBufferedLogs);
     void stopLogging();
-    void writeToLog(const QString &line);
+    void writeToLog(const QString &line, const QString &timestamp);
     void onZmodemDetected(ZmodemTransfer::Direction direction);
     void onZmodemFileStarted(ZmodemTransfer::Direction direction,
                              const QString &fileName,
@@ -116,7 +115,6 @@ private:
     bool logging_ = false;
     QFile *logFile_ = nullptr;
     QString logFilePath_;
-    TerminalLineTimestamp terminalLineTimestamp_;
     XyModemCommandDetector xyModemCommandDetector_;
     XyModemCommand pendingXyModemCommand_ =
             XyModemCommand::None;

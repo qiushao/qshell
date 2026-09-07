@@ -279,7 +279,6 @@ struct GlobalSettings {
     bool copyOnSelect = false;
     bool debug = true;
     bool terminalTimestamp = false;
-    bool logTimestamp = true;
     bool autoSaveLog = false;
     QString autoSaveLogDirectory;
     bool mcpEnabled = false;
@@ -294,7 +293,6 @@ struct GlobalSettings {
         obj["copyOnSelect"] = copyOnSelect;
         obj["debug"] = debug;
         obj["terminalTimestamp"] = terminalTimestamp;
-        obj["logTimestamp"] = logTimestamp;
         obj["autoSaveLog"] = autoSaveLog;
         obj["autoSaveLogDirectory"] = autoSaveLogDirectory;
         obj["mcpEnabled"] = mcpEnabled;
@@ -311,7 +309,6 @@ struct GlobalSettings {
         settings.copyOnSelect = obj["copyOnSelect"].toBool();
         settings.debug = obj["debug"].toBool();
         settings.terminalTimestamp = obj["terminalTimestamp"].toBool(false);
-        settings.logTimestamp = !settings.terminalTimestamp && obj["logTimestamp"].toBool(true);
         settings.autoSaveLog = obj["autoSaveLog"].toBool(false);
         settings.autoSaveLogDirectory = obj["autoSaveLogDirectory"].toString();
         settings.mcpEnabled = obj["mcpEnabled"].toBool(false);

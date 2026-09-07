@@ -132,7 +132,14 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
         QObject::connect(this, &QTermWidget::copyAvailable, this, &BaseTerminal::onCopyAvailable);
     }
 
-    QObject::connect(this, &QTermWidget::onNewLine, this, &BaseTerminal::onDisplayOutput);
+    setTerminalTimestampEnabled(globalSettings.terminalTimestamp);
+    QObject::connect(ConfigManager::instance(), &ConfigManager::globalSettingsChanged,
+                     this, [this]() {
+                         setTerminalTimestampEnabled(
+                                 ConfigManager::instance()->globalSettings().terminalTimestamp);
+                     });
+    QObject::connect(this, &QTermWidget::onNewLineWithTimestamp,
+                     this, &BaseTerminal::onDisplayOutput);
 
     xyModemTransfer_ = new XyModemTransfer(this);
     zmodemTransfer_ = new ZmodemTransfer(this);
@@ -418,10 +425,10 @@ void BaseTerminal::startAutoLogging() {
             false);
 }
 
-void BaseTerminal::onDisplayOutput(const QString &line) {
+void BaseTerminal::onDisplayOutput(const QString &line, const QString &timestamp) {
     // 如果正在记录日志，写入数据
     if (logging_ && logFile_ && logFile_->isOpen()) {
-        writeToLog(line);
+        writeToLog(line, timestamp);
     }
 }
 
@@ -454,20 +461,7 @@ void BaseTerminal::displayBackendData(
 
 void BaseTerminal::displayTerminalData(
         const QByteArray &data) {
-    const bool timestampEnabled =
-            ConfigManager::instance()->globalSettings().terminalTimestamp &&
-            sessionData_.protocolType == ProtocolType::Serial;
-    const QByteArray timestamp =
-            timestampEnabled
-                    ? QDateTime::currentDateTime()
-                              .toString(QStringLiteral("[yyyy-MM-dd HH:mm:ss.zzz] "))
-                              .toUtf8()
-                    : QByteArray();
-    const QByteArray displayData =
-            terminalLineTimestamp_.process(
-                    data, timestampEnabled, timestamp);
-    recvData(displayData.constData(),
-             static_cast<int>(displayData.size()));
+    recvData(data.constData(), static_cast<int>(data.size()));
 }
 
 bool BaseTerminal::prepareZmodemUpload(
@@ -1357,7 +1351,7 @@ void BaseTerminal::startLogging(const QString &filePath, bool includeBufferedLog
         if (bufferedLineCount > 0) {
             QString bufferedLogs;
             QTextStream stream(&bufferedLogs, QIODevice::WriteOnly);
-            saveHistory(&stream, 0, 0, bufferedLineCount - 1);
+            saveHistory(&stream, 0, 0, bufferedLineCount - 1, true);
             stream.flush();
 
             // 终端屏幕未使用的行也在缓存中，避免将它们写成文件尾部的大量空行。
@@ -1399,14 +1393,14 @@ void BaseTerminal::stopLogging() {
     qDebug() << "Stopped logging to:" << logFilePath_;
 }
 
-void BaseTerminal::writeToLog(const QString &line) {
+void BaseTerminal::writeToLog(const QString &line, const QString &timestamp) {
     if (!logFile_ || !logFile_->isOpen()) {
         return;
     }
 
-    if (ConfigManager::instance()->globalSettings().logTimestamp) {
-        const QString timestamp = QDateTime::currentDateTime().toString("[yyyy-MM-dd HH:mm:ss.zzz] ");
+    if (!timestamp.isEmpty()) {
         logFile_->write(timestamp.toUtf8());
+        logFile_->write(" ");
     }
 
     logFile_->write(line.toUtf8());

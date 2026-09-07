@@ -31,6 +31,7 @@ class QVBoxLayout;
 class SearchBar;
 class Session;
 class TerminalDisplay;
+class TimestampDisplay;
 class Emulation;
 class QUrl;
 
@@ -280,6 +281,7 @@ signals:
 
     //qiushao patch start
     void onNewLine(const QString &line);
+    void onNewLineWithTimestamp(const QString &line, const QString &timestamp);
     //qiushao patch end
 
     /**
@@ -336,7 +338,9 @@ public slots:
     void clear();
     void toggleShowSearchBar();
     void saveHistory(QIODevice *device, int format = 0, int start = -1, int end = -1);
-    void saveHistory(QTextStream *stream, int format = 0, int start = -1, int end = -1);
+    void saveHistory(QTextStream *stream, int format = 0, int start = -1, int end = -1,
+                     bool includeTimestamps = false);
+    void setTerminalTimestampEnabled(bool enabled);
     void screenShot(QPixmap *pixmap);
     void screenShot(const QString &fileName);
     void repaintDisplay(void);
@@ -377,6 +381,7 @@ private:
     int setZoom(int step);
     QWidget *messageParentWidget = nullptr;
     TerminalDisplay *m_terminalDisplay = nullptr;
+    TimestampDisplay *m_timestampDisplay = nullptr;
     Emulation  *m_emulation = nullptr;
     SearchBar* m_searchBar = nullptr;
     QVBoxLayout *m_layout = nullptr;

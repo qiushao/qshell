@@ -33,6 +33,8 @@
 #include "ColorScheme.h"
 #include "SearchBar.h"
 #include "qtermwidget.h"
+#include "TimestampDisplay.h"
+#include <QHBoxLayout>
 
 
 QTermWidget::QTermWidget(QWidget *messageParentWidget, QWidget *parent)
@@ -78,7 +80,14 @@ QTermWidget::QTermWidget(QWidget *messageParentWidget, QWidget *parent)
     m_emulation->setHistory(HistoryTypeBuffer(1000));
     m_emulation->setKeyBindings(QString());
 
-    m_layout->addWidget(m_terminalDisplay);
+    auto *terminalLayout = new QHBoxLayout;
+    terminalLayout->setContentsMargins(0, 0, 0, 0);
+    terminalLayout->setSpacing(0);
+    m_timestampDisplay = new TimestampDisplay(m_terminalDisplay, this);
+    m_timestampDisplay->hide();
+    terminalLayout->addWidget(m_timestampDisplay);
+    terminalLayout->addWidget(m_terminalDisplay, 1);
+    m_layout->addLayout(terminalLayout);
     m_terminalDisplay->setObjectName("terminalDisplay");
     setMessageParentWidget(messageParentWidget?messageParentWidget:this);
 
@@ -147,6 +156,8 @@ QTermWidget::QTermWidget(QWidget *messageParentWidget, QWidget *parent)
         setSize(size);
     });
 
+    connect(m_emulation, &Emulation::onNewLineWithTimestamp,
+            this, &QTermWidget::onNewLineWithTimestamp);
     //qiushao patch start
     connect(m_terminalDisplay->screenWindow()->screen(), &Screen::onNewLine, this, &QTermWidget::onNewLine);
     //qiushao patch end
@@ -652,7 +663,37 @@ int QTermWidget::getMargin() const {
     return m_terminalDisplay->margin();
 }
 
-void QTermWidget::saveHistory(QTextStream *stream, int format, int start, int end) {
+void QTermWidget::setTerminalTimestampEnabled(bool enabled) {
+    m_emulation->setTimestampEnabled(enabled);
+    m_timestampDisplay->setVisible(enabled);
+}
+
+void QTermWidget::saveHistory(QTextStream *stream, int format, int start, int end,
+                             bool includeTimestamps) {
+    if (format == 0 && includeTimestamps && !m_timestampDisplay->isHidden()) {
+        const auto *screen = m_terminalDisplay->screenWindow()->screen();
+        const int lastLine = screen->getHistLines() + screen->getLines() - 1;
+        start = qMax(0, start);
+        end = end < 0 ? lastLine : qMin(end, lastLine);
+        for (int row = start; row <= end; ++row) {
+            const QString timestamp = screen->lineTimestamp(row);
+            if (!timestamp.isEmpty())
+                *stream << timestamp << ' ';
+            // Export each visual row with the same timestamp as the gutter.
+            QString text;
+            QTextStream rowStream(&text);
+            PlainTextDecoder rowDecoder;
+            rowDecoder.begin(&rowStream);
+            screen->writeLinesToStream(&rowDecoder, row, row);
+            rowDecoder.end();
+            if (text.endsWith('\n'))
+                text.chop(1);
+            *stream << text;
+            if (row < end)
+                *stream << '\n';
+        }
+        return;
+    }
     TerminalCharacterDecoder *decoder;
     if(format == 0) {
         decoder = new PlainTextDecoder;

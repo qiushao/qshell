@@ -20,6 +20,7 @@
  02110-1301  USA.
 */
 #include "Screen.h"
+#include <QDateTime>
 
 #include <cctype>
 #include <cstdio>
@@ -60,6 +61,7 @@ Screen::Screen(int l, int c)
             effectiveBackground(CharacterColor()), effectiveRendition(0),
             lastPos(-1) {
     lineProperties.resize(lines + 1);
+    lineTimestamps_.resize(lines + 1);
     for (int i = 0; i < lines + 1; i++)
             lineProperties[i] = LINE_DEFAULT;
 
@@ -149,7 +151,27 @@ void Screen::setMargins(int top, int bot) {
 int Screen::topMargin() const { return _topMargin; }
 int Screen::bottomMargin() const { return _bottomMargin; }
 
+void Screen::setTimestampEnabled(bool enabled) {
+    timestampEnabled_ = enabled;
+}
+
+QString Screen::lineTimestamp(int line) const {
+    if (!timestampEnabled_ || line < 0 || line >= getHistLines() + lines)
+        return {};
+    const qint64 timestamp = line < getHistLines()
+            ? history->lineTimestamp(line) : lineTimestamps_[line - getHistLines()];
+    return timestamp == 0 ? QString()
+            : QDateTime::fromMSecsSinceEpoch(timestamp).toString(QStringLiteral("MM-dd hh:mm:ss"));
+}
+
+void Screen::stampCurrentLine() {
+    if (timestampEnabled_ && lineTimestamps_[cuY] == 0)
+        lineTimestamps_[cuY] = QDateTime::currentMSecsSinceEpoch();
+}
+
 void Screen::index() {
+    stampCurrentLine();
+    const QString timestamp = lineTimestamp(getHistLines() + cuY);
     //qiushao patch start
     QString result;
     QTextStream stream(&result, QIODevice::ReadWrite);
@@ -172,6 +194,7 @@ void Screen::index() {
     }
 
     emit onNewLine(result);
+    emit onNewLineWithTimestamp(result, timestamp);
     //qiushao patch end
 }
 
@@ -321,6 +344,7 @@ void Screen::resizeImage(int new_lines, int new_columns) {
         newScreenLines[i].resize(new_columns);
 
     lineProperties.resize(new_lines + 1);
+    lineTimestamps_.resize(new_lines + 1);
     for (int i = lines; (i > 0) && (i < new_lines + 1); i++)
         lineProperties[i] = LINE_DEFAULT;
 
@@ -707,6 +731,8 @@ notcombine:
         }
     }
 
+    stampCurrentLine();
+
     // ensure current line vector has enough elements
     int size = screenLines[cuY].size();
     if (size < cuX + w) {
@@ -869,6 +895,9 @@ void Screen::clearImage(int loca, int loce, char c) {
         int endCol = (y == bottomLine) ? loce % columns : columns - 1;
         int startCol = (y == topLine) ? loca % columns : 0;
 
+        if (startCol == 0 && endCol == columns - 1)
+            lineTimestamps_[y] = 0;
+
         QVector<Character> &line = screenLines[y];
 
         if (isDefaultCh && endCol == columns - 1) {
@@ -900,6 +929,8 @@ void Screen::moveImage(int dest, int sourceBegin, int sourceEnd) {
                     screenLines[(sourceBegin / columns) + i];
             lineProperties[(dest / columns) + i] =
                     lineProperties[(sourceBegin / columns) + i];
+            lineTimestamps_[(dest / columns) + i] =
+                    lineTimestamps_[(sourceBegin / columns) + i];
         }
     } else {
         for (int i = lines; i >= 0; i--) {
@@ -907,6 +938,8 @@ void Screen::moveImage(int dest, int sourceBegin, int sourceEnd) {
                     screenLines[(sourceBegin / columns) + i];
             lineProperties[(dest / columns) + i] =
                     lineProperties[(sourceBegin / columns) + i];
+            lineTimestamps_[(dest / columns) + i] =
+                    lineTimestamps_[(sourceBegin / columns) + i];
         }
     }
 
@@ -1254,7 +1287,7 @@ void Screen::addHistLine() {
         int oldHistLines = history->getLines();
 
         history->addCellsVector(screenLines[0]);
-        history->addLine(lineProperties[0] & LINE_WRAPPED);
+        history->addLine(lineProperties[0] & LINE_WRAPPED, lineTimestamps_[0]);
 
         int newHistLines = history->getLines();
 

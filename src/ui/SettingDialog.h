@@ -34,7 +34,6 @@ private:
     QCheckBox *copyOnSelectCheckBox_ = nullptr;
     QCheckBox *debugCheckBox_ = nullptr;
     QCheckBox *terminalTimestampCheckBox_ = nullptr;
-    QCheckBox *logTimestampCheckBox_ = nullptr;
     QCheckBox *autoSaveLogCheckBox_ = nullptr;
     QLineEdit *autoSaveLogDirectoryEdit_ = nullptr;
     QPushButton *selectAutoSaveLogDirectoryButton_ = nullptr;

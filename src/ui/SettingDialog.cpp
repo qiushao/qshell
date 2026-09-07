@@ -19,7 +19,6 @@ SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     colorSchemeEdit_->setCurrentText(settings.colorScheme);
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
     debugCheckBox_->setChecked(settings.debug);
-    logTimestampCheckBox_->setChecked(settings.logTimestamp);
     terminalTimestampCheckBox_->setChecked(settings.terminalTimestamp);
     autoSaveLogDirectoryEdit_->setText(settings.autoSaveLogDirectory);
     autoSaveLogCheckBox_->setChecked(settings.autoSaveLog);
@@ -56,12 +55,9 @@ void SettingDialog::initWidgets() {
 
     terminalTimestampCheckBox_ = new QCheckBox(this);
     terminalTimestampCheckBox_->setToolTip(
-            tr("Add a system timestamp before each serial terminal output line"));
-    formLayout_->addRow(tr("Serial Terminal Timestamp:"), terminalTimestampCheckBox_);
-
-    logTimestampCheckBox_ = new QCheckBox(this);
-    logTimestampCheckBox_->setToolTip(tr("Add a system timestamp before each saved log line"));
-    formLayout_->addRow(tr("Log Timestamp:"), logTimestampCheckBox_);
+            tr("Show timestamps beside terminal output lines for all sessions (MM-dd hh:mm:ss). "
+               "Saved logs use the same timestamps."));
+    formLayout_->addRow(tr("Terminal Timestamp:"), terminalTimestampCheckBox_);
 
     autoSaveLogCheckBox_ = new QCheckBox(this);
     autoSaveLogCheckBox_->setToolTip(tr("Automatically save logs for newly opened sessions"));
@@ -106,13 +102,6 @@ void SettingDialog::initWidgets() {
 
     QObject::connect(okButton_, &QPushButton::clicked, this, &SettingDialog::onOK);
     QObject::connect(cancelButton_, &QPushButton::clicked, this, &SettingDialog::onCancel);
-    QObject::connect(terminalTimestampCheckBox_, &QCheckBox::toggled, this,
-                     [this](bool enabled) {
-                         if (enabled) {
-                             logTimestampCheckBox_->setChecked(false);
-                         }
-                         logTimestampCheckBox_->setEnabled(!enabled);
-                     });
     const auto selectAutoSaveLogDirectory = [this]() {
         const QString currentDirectory = autoSaveLogDirectoryEdit_->text().isEmpty()
                                                  ? QDir::homePath()
@@ -163,7 +152,6 @@ void SettingDialog::onOK() {
     settings.copyOnSelect = copyOnSelectCheckBox_->isChecked();
     settings.debug = debugCheckBox_->isChecked();
     settings.terminalTimestamp = terminalTimestampCheckBox_->isChecked();
-    settings.logTimestamp = !settings.terminalTimestamp && logTimestampCheckBox_->isChecked();
     settings.autoSaveLog = autoSaveLogCheckBox_->isChecked();
     settings.autoSaveLogDirectory = autoSaveLogDirectoryEdit_->text();
     settings.mcpEnabled = mcpEnabledCheckBox_->isChecked();

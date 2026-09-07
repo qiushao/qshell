@@ -109,8 +109,13 @@ void HistoryScrollBuffer::addCells(const Character a[], int count) {
     addCellsVector(newLine);
 }
 
-void HistoryScrollBuffer::addLine(bool previousWrapped) {
+void HistoryScrollBuffer::addLine(bool previousWrapped, qint64 timestamp) {
+    _lineTimestamps[bufferIndex(_usedLines - 1)] = timestamp;
     _wrappedLine[bufferIndex(_usedLines - 1)] = previousWrapped;
+}
+
+qint64 HistoryScrollBuffer::lineTimestamp(int lineNumber) const {
+    return _lineTimestamps[bufferIndex(lineNumber)];
 }
 
 int HistoryScrollBuffer::getLines() { 
@@ -158,9 +163,11 @@ void HistoryScrollBuffer::getCells(int lineNumber, int startColumn, int count,
 void HistoryScrollBuffer::setMaxNbLines(unsigned int lineCount) {
     HistoryLine *oldBuffer = _historyBuffer;
     HistoryLine *newBuffer = new HistoryLine[lineCount];
+    QVector<qint64> newTimestamps(lineCount);
 
     for (int i = 0; i < qMin(_usedLines, (int)lineCount); i++) {
         newBuffer[i] = oldBuffer[bufferIndex(i)];
+        newTimestamps[i] = _lineTimestamps[bufferIndex(i)];
     }
 
     _usedLines = qMin(_usedLines, (int)lineCount);
@@ -168,6 +175,7 @@ void HistoryScrollBuffer::setMaxNbLines(unsigned int lineCount) {
     _head = (_usedLines == _maxLineCount) ? 0 : _usedLines - 1;
 
     _historyBuffer = newBuffer;
+    _lineTimestamps = std::move(newTimestamps);
     delete[] oldBuffer;
 
     _wrappedLine.resize(lineCount);
@@ -188,13 +196,14 @@ int HistoryScrollBuffer::bufferIndex(int lineNumber) const {
 
 HistoryScrollNone::HistoryScrollNone() : HistoryScroll(new HistoryTypeNone()) {}
 HistoryScrollNone::~HistoryScrollNone() {}
+qint64 HistoryScrollNone::lineTimestamp(int) const { return 0; }
 bool HistoryScrollNone::hasScroll() { return false; }
 int HistoryScrollNone::getLines() { return 0; }
 int HistoryScrollNone::getLineLen(int) { return 0; }
 bool HistoryScrollNone::isWrappedLine(int /*lineno*/) { return false; }
 void HistoryScrollNone::getCells(int, int, int, Character[]) {}
 void HistoryScrollNone::addCells(const Character[], int) {}
-void HistoryScrollNone::addLine(bool) {}
+void HistoryScrollNone::addLine(bool, qint64) {}
 
 HistoryType::HistoryType() {}
 HistoryType::~HistoryType() {}
@@ -231,12 +240,12 @@ HistoryScroll *HistoryTypeBuffer::scroll(HistoryScroll *old) const {
                 Character *tmp_line = new Character[size];
                 old->getCells(i, 0, size, tmp_line);
                 newScroll->addCells(tmp_line, size);
-                newScroll->addLine(old->isWrappedLine(i));
+                newScroll->addLine(old->isWrappedLine(i), old->lineTimestamp(i));
                 delete[] tmp_line;
             } else {
                 old->getCells(i, 0, size, line);
                 newScroll->addCells(line, size);
-                newScroll->addLine(old->isWrappedLine(i));
+                newScroll->addLine(old->isWrappedLine(i), old->lineTimestamp(i));
             }
         }
         delete old;

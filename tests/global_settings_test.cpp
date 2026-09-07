@@ -20,7 +20,7 @@ int main() {
 
     const GlobalSettings restored =
             GlobalSettings::fromJson(configured.toJson());
-    if (!restored.autoSaveLog || !restored.terminalTimestamp || restored.logTimestamp ||
+    if (!restored.autoSaveLog || !restored.terminalTimestamp ||
         restored.autoSaveLogDirectory != configured.autoSaveLogDirectory) {
         qCritical() << "global settings did not survive JSON round trip";
         return 1;
@@ -34,5 +34,13 @@ int main() {
         return 1;
     }
 
+    QJsonObject oldSettings;
+    oldSettings["logTimestamp"] = true;
+    oldSettings["terminalTimestamp"] = false;
+    const auto migrated = GlobalSettings::fromJson(oldSettings);
+    if (migrated.terminalTimestamp || migrated.toJson().contains("logTimestamp")) {
+        qCritical() << "obsolete log timestamp setting was retained";
+        return 1;
+    }
     return 0;
 }

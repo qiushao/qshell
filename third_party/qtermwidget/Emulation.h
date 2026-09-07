@@ -164,6 +164,7 @@ public:
      * type of store.
      */
     void setHistory(const HistoryType&);
+    void setTimestampEnabled(bool enabled);
     /** Returns the history store used by this emulation.  See setHistory() */
     const HistoryType& history() const;
     /** Clears the history scroll. */
@@ -277,6 +278,7 @@ public slots:
     void receiveData(const char* buffer,int len);
 
 signals:
+    void onNewLineWithTimestamp(const QString &line, const QString &timestamp);
 
     /**
      * Emitted when a buffer of data is ready to send to the

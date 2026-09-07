@@ -22,19 +22,11 @@ target_link_libraries(global_settings_test
 add_test(NAME global_settings_test
         COMMAND global_settings_test)
 
-add_executable(terminal_line_timestamp_test
-        terminal_line_timestamp_test.cpp
-        ../src/core/TerminalLineTimestamp.cpp
-        ../src/core/TerminalLineTimestamp.h)
-
-target_include_directories(terminal_line_timestamp_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/src)
-
-target_link_libraries(terminal_line_timestamp_test
-        Qt::Core)
-
-add_test(NAME terminal_line_timestamp_test
-        COMMAND terminal_line_timestamp_test)
+add_executable(terminal_timestamp_test terminal_timestamp_test.cpp)
+target_link_libraries(terminal_timestamp_test Qt::Widgets qtermwidget)
+add_test(NAME terminal_timestamp_test COMMAND terminal_timestamp_test)
+set_tests_properties(terminal_timestamp_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(zmodem_transfer_test
         zmodem_transfer_test.cpp
@@ -73,3 +65,19 @@ add_test(NAME xymodem_transfer_test
         COMMAND xymodem_transfer_test)
 set_tests_properties(xymodem_transfer_test PROPERTIES
         TIMEOUT 30)
+
+add_executable(session_timestamp_test
+        session_timestamp_test.cpp
+        ../src/ui/terminal/BaseTerminal.cpp
+        ../src/core/ConfigManager.cpp
+        ../src/core/CryptoHelper.cpp
+        ../src/core/xymodem/XyModemCommandDetector.cpp
+        ../src/core/xymodem/XyModemProtocol.cpp
+        ../src/core/xymodem/XyModemTransfer.cpp
+        ../src/core/zmodem/ZmodemProtocol.cpp
+        ../src/core/zmodem/ZmodemTransfer.cpp)
+target_include_directories(session_timestamp_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(session_timestamp_test Qt::Widgets qtermwidget ptyqt)
+add_test(NAME session_timestamp_test COMMAND session_timestamp_test)
+set_tests_properties(session_timestamp_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

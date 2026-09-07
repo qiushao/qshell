@@ -465,6 +465,8 @@ public:
      * @param toLine The last line in the history to retrieve
      */
     void writeLinesToStream(TerminalCharacterDecoder* decoder, int fromLine, int toLine) const;
+    void setTimestampEnabled(bool enabled);
+    QString lineTimestamp(int line) const;
 
     /**
      * Copies the selected characters, set using @see setSelBeginXY and @see setSelExtentXY
@@ -573,6 +575,7 @@ public:
     //qiushao patch start
 signals:
     void onNewLine(const QString &line);
+    void onNewLineWithTimestamp(const QString &line, const QString &timestamp);
     //qiushao patch end
 
 private:
@@ -646,6 +649,9 @@ private:
     int _droppedLines;
 
     QVarLengthArray<LineProperty,64> lineProperties;
+    QVector<qint64> lineTimestamps_;
+    bool timestampEnabled_ = false;
+    void stampCurrentLine();
 
     // history buffer ---------------
     HistoryScroll* history;

@@ -259,6 +259,7 @@ public:
      * Returns the height of the characters in the font used to draw the text in the display.
      */
     int  fontHeight()   { return _fontHeight;   }
+    int textTop() const { return contentsRect().top() + _topMargin; }
     /**
      * Returns the width of the characters in the display.
      * This assumes the use of a fixed-width font.

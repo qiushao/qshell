@@ -50,6 +50,9 @@ Emulation::Emulation()
     _screen[0] = new Screen(40, 80);
     _screen[1] = new Screen(40, 80);
     _currentScreen = _screen[0];
+    for (Screen *screen : _screen)
+        connect(screen, &Screen::onNewLineWithTimestamp,
+                this, &Emulation::onNewLineWithTimestamp);
 
     connect(&_bulkTimer1, &QTimer::timeout, this, &Emulation::showBulk);
     connect(&_bulkTimer2, &QTimer::timeout, this, &Emulation::showBulk);
@@ -130,6 +133,11 @@ void Emulation::setScreen(int n) {
 
 void Emulation::clearHistory() {
     _screen[0]->setScroll(_screen[0]->getScroll(), false);
+}
+
+void Emulation::setTimestampEnabled(bool enabled) {
+    for (Screen *screen : _screen)
+        screen->setTimestampEnabled(enabled);
 }
 
 void Emulation::setHistory(const HistoryType &t) {

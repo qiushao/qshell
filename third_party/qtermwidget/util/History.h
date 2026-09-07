@@ -44,6 +44,7 @@ public:
     virtual int  getLineLen(int lineno) = 0;
     virtual void getCells(int lineno, int colno, int count, Character res[]) = 0;
     virtual bool isWrappedLine(int lineno) = 0;
+    virtual qint64 lineTimestamp(int lineno) const = 0;
 
     // backward compatibility (obsolete)
     Character   getCell(int lineno, int colno) { Character res; getCells(lineno,colno,1,&res); return res; }
@@ -56,7 +57,7 @@ public:
         addCells(cells.data(),cells.size());
     }
 
-    virtual void addLine(bool previousWrapped=false) = 0;
+    virtual void addLine(bool previousWrapped=false, qint64 timestamp=0) = 0;
 
     //
     // FIXME:  Passing around constant references to HistoryType instances
@@ -81,10 +82,11 @@ public:
     int  getLineLen(int lineno) override;
     void getCells(int lineno, int colno, int count, Character res[]) override;
     bool isWrappedLine(int lineno) override;
+    qint64 lineTimestamp(int lineno) const override;
 
     void addCells(const Character a[], int count) override;
     void addCellsVector(const QVector<Character>& cells) override;
-    void addLine(bool previousWrapped=false) override;
+    void addLine(bool previousWrapped=false, qint64 timestamp=0) override;
 
     void setMaxNbLines(unsigned int nbLines);
     unsigned int maxNbLines() const { return _maxLineCount; }
@@ -94,6 +96,7 @@ private:
 
     HistoryLine* _historyBuffer;
     QBitArray _wrappedLine;
+    QVector<qint64> _lineTimestamps;
     int _maxLineCount;
     int _usedLines;
     int _head;
@@ -111,9 +114,10 @@ public:
     int  getLineLen(int lineno) override;
     void getCells(int lineno, int colno, int count, Character res[]) override;
     bool isWrappedLine(int lineno) override;
+    qint64 lineTimestamp(int lineno) const override;
 
     void addCells(const Character a[], int count) override;
-    void addLine(bool previousWrapped=false) override;
+    void addLine(bool previousWrapped=false, qint64 timestamp=0) override;
 };
 
 

@@ -14,6 +14,7 @@ set(SRC_HEADERS
         Vt102Emulation.h
         Screen.h
         ScreenWindow.h
+        TimestampDisplay.h
         TerminalDisplay.h
         qtermwidget.h
         qtermwidget_version.h)
@@ -31,6 +32,7 @@ set(SRC_FILES
         Vt102Emulation.cpp
         Screen.cpp
         ScreenWindow.cpp
+        TimestampDisplay.cpp
         TerminalDisplay.cpp
         qtermwidget.cpp
 )
