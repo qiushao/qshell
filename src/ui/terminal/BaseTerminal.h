@@ -17,6 +17,7 @@ class QFileDialog;
 class QFocusEvent;
 class IPtyProcess;
 class QProgressDialog;
+class TerminalCommandCompletion;
 
 class BaseTerminal : public QTermWidget {
 
@@ -137,6 +138,7 @@ private:
     QString zmodemDirectory_;
     QStringList pendingZmodemUploadPaths_;
     QString pendingZmodemDownloadDirectory_;
+    TerminalCommandCompletion *commandCompletion_ = nullptr;
 };
 
 #endif//QSHELL_BASE_TERMINAL_H

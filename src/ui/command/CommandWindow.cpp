@@ -1,14 +1,14 @@
 #include "CommandWindow.h"
 #include "CommandHistoryDialog.h"
+#include "CommandCompletionPopup.h"
+#include "core/CommandHistory.h"
+#include <QSignalBlocker>
+#include <algorithm>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QKeyEvent>
-#include <QFile>
-#include <QTextStream>
-#include <QStandardPaths>
-#include <QDir>
 #include <QMenu>
 #include <QAction>
 #include <QMessageBox>
@@ -17,11 +17,6 @@
 
 CommandWindow::CommandWindow(QWidget *parent)
     : QWidget(parent) {
-
-    // 设置历史文件路径
-    QString configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    QDir().mkpath(configPath);
-    historyFilePath_ = configPath + "/command_history.txt";
 
     // 创建编辑器
     commandEditor_ = new QTextEdit(this);
@@ -37,12 +32,20 @@ CommandWindow::CommandWindow(QWidget *parent)
     // 设置右键菜单
     setupContextMenu();
 
-    // 加载历史记录
-    loadHistory();
-}
-
-CommandWindow::~CommandWindow() {
-    saveHistory();
+    historyIndex_ = -1;
+    connect(&CommandHistory::instance(), &CommandHistory::changed, this, [this]() {
+        historyIndex_ = -1;
+    });
+    completion_ = new CommandCompletionPopup(commandEditor_);
+    connect(commandEditor_, &QTextEdit::textChanged, this, [this]() {
+        historyIndex_ = -1;
+        completion_->updateMatches(commandEditor_->toPlainText(), commandEditor_->cursorRect());
+    });
+    connect(completion_, &CommandCompletionPopup::commandSelected, this, [this](const QString &command) {
+        const QSignalBlocker blocker(commandEditor_);
+        commandEditor_->setPlainText(command);
+        commandEditor_->moveCursor(QTextCursor::End);
+    });
 }
 
 void CommandWindow::setupContextMenu() {
@@ -70,79 +73,23 @@ QWidget *CommandWindow::widget() const {
     return commandEditor_;
 }
 
-void CommandWindow::loadHistory() {
-    QFile file(historyFilePath_);
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&file);
-        in.setEncoding(QStringConverter::Utf8);
-        while (!in.atEnd()) {
-            QString line = in.readLine();
-            if (!line.isEmpty()) {
-                history_.append(line);
-            }
-        }
-        file.close();
-    }
-
-    // 限制历史记录大小
-    while (history_.size() > MAX_HISTORY_SIZE) {
-        history_.removeFirst();
-    }
-
-    historyIndex_ = history_.size();
-    // qDebug() << "Loaded" << history_.size() << "history entries from" << historyFilePath_;
-}
-
-void CommandWindow::saveHistory() {
-    QFile file(historyFilePath_);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&file);
-        out.setEncoding(QStringConverter::Utf8);
-        for (const QString &cmd : history_) {
-            out << cmd << "\n";
-        }
-        file.close();
-        qDebug() << "Saved" << history_.size() << "history entries to" << historyFilePath_;
-    } else {
-        qWarning() << "Failed to save command history to" << historyFilePath_;
-    }
-}
-
 void CommandWindow::addToHistory(const QString &command) {
-    QString trimmedCmd = command.trimmed();
-    if (trimmedCmd.isEmpty()) {
-        return;
-    }
-
-    // 避免重复添加相同的命令（与上一条相同）
-    if (!history_.isEmpty() && history_.last() == trimmedCmd) {
-        historyIndex_ = history_.size();
-        return;
-    }
-
-    history_.append(trimmedCmd);
-
-    // 限制历史记录大小
-    while (history_.size() > MAX_HISTORY_SIZE) {
-        history_.removeFirst();
-    }
-
-    historyIndex_ = history_.size();
+    CommandHistory::instance().add(command);
+    historyIndex_ = -1;
     currentInput_.clear();
-
-    // 定期保存
-    if (history_.size() % 10 == 0) {
-        saveHistory();
-    }
 }
 
 void CommandWindow::navigateHistory(int direction) {
-    if (history_.isEmpty()) {
+    const auto &history = CommandHistory::instance().commands();
+    historyIndex_ = historyIndex_ < 0 ? history.size() : std::min(historyIndex_, history.size());
+    completion_->hide();
+    const QSignalBlocker blocker(commandEditor_);
+    if (history.isEmpty()) {
         return;
     }
 
     // 第一次按上键时，保存当前输入
-    if (historyIndex_ == history_.size() && direction < 0) {
+    if (historyIndex_ == history.size() && direction < 0) {
         currentInput_ = commandEditor_->toPlainText();
     }
 
@@ -150,17 +97,18 @@ void CommandWindow::navigateHistory(int direction) {
 
     if (newIndex < 0) {
         newIndex = 0;
-    } else if (newIndex > history_.size()) {
-        newIndex = history_.size();
+    } else if (newIndex > history.size()) {
+        newIndex = history.size();
     }
 
     historyIndex_ = newIndex;
 
-    if (historyIndex_ == history_.size()) {
+    if (historyIndex_ == history.size()) {
         // 恢复用户原来的输入
         commandEditor_->setPlainText(currentInput_);
+        historyIndex_ = -1;
     } else {
-        commandEditor_->setPlainText(history_[historyIndex_]);
+        commandEditor_->setPlainText(history[historyIndex_]);
     }
 
     // 将光标移到末尾
@@ -170,19 +118,18 @@ void CommandWindow::navigateHistory(int direction) {
 }
 
 void CommandWindow::showHistoryDialog() {
-    CommandHistoryDialog dialog(history_, this);
+    completion_->hide();
+    CommandHistoryDialog dialog(this);
 
     connect(&dialog, &CommandHistoryDialog::commandSelected,
             this, [this](const QString &command) {
+        const QSignalBlocker blocker(commandEditor_);
         commandEditor_->setPlainText(command);
         QTextCursor cursor = commandEditor_->textCursor();
         cursor.movePosition(QTextCursor::End);
         commandEditor_->setTextCursor(cursor);
         commandEditor_->setFocus();
     });
-
-    connect(&dialog, &CommandHistoryDialog::clearHistoryRequested,
-            this, &CommandWindow::clearHistory);
 
     dialog.exec();
 }
@@ -197,10 +144,10 @@ void CommandWindow::clearHistory() {
     );
 
     if (result == QMessageBox::Yes) {
-        history_.clear();
-        historyIndex_ = 0;
+        CommandHistory::instance().clear();
+        completion_->hide();
+        historyIndex_ = -1;
         currentInput_.clear();
-        saveHistory();
         qDebug() << "Command history cleared";
     }
 }
@@ -208,6 +155,9 @@ void CommandWindow::clearHistory() {
 bool CommandWindow::eventFilter(QObject *obj, QEvent *e) {
     if (obj == commandEditor_ && e->type() == QEvent::KeyPress) {
         auto *event = dynamic_cast<QKeyEvent *>(e);
+        if (completion_->handleKey(event)) {
+            return true;
+        }
 
         // Ctrl+Up/Down 切换历史记录
         if (event->modifiers() & Qt::ControlModifier) {

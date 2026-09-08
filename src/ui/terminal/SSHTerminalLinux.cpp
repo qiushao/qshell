@@ -82,7 +82,8 @@ static QString createShellFile(const SessionData &sessionData)
 void SSHTerminal::connect() {
     QString shellFile = createShellFile(sessionData_);
     QString strTxt = "expect -f " + shellFile + "\n";
-    sendText(strTxt);
+    // The connection helper is internal, so it should not enter command history.
+    writeToBackend(strTxt.toUtf8());
 
     QTime dieTime = QTime::currentTime().addMSecs(200);
     while (QTime::currentTime() < dieTime) {

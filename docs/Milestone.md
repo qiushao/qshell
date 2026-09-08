@@ -18,6 +18,6 @@
     [x] linux, macos 支持 x11
     [x] windows 支持 x11
 14. []实现 sftp
-15. []实现 zmode，ymode
-16. []历史命令自动补全
+15. [x]实现 zmode，ymode
+16. [x]历史命令自动补全
 17. [x]关键字高亮

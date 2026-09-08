@@ -12,15 +12,16 @@ class CommandHistoryDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit CommandHistoryDialog(const QStringList &history, QWidget *parent = nullptr);
+    explicit CommandHistoryDialog(QWidget *parent = nullptr);
 
 signals:
     void commandSelected(const QString &command);
-    void clearHistoryRequested();
 
 private:
     void onItemDoubleClicked(QListWidgetItem *item);
     void onClearHistory();
+    void onDeleteSelected();
+    void reloadHistory();
 
     QListWidget *listWidget_ = nullptr;
 };

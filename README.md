@@ -9,6 +9,7 @@
 - 日记保存
 - Button Bar
 - Command Window
+- 历史命令记录与前缀补全
 - Lua script engine
 - x11 转发
 - XMODEM、YMODEM、ZMODEM 文件上传和下载
@@ -27,6 +28,16 @@
 
 ## Lua script engine
 请参考 [LuaScriptEngine](./docs/LuaScriptEngine.md)
+
+## 历史命令补全
+终端直接输入和底部 Command Window 共享历史命令，自动保存最近 1000 条去重记录，重启后保留。输入时只按完整输入做前缀匹配（不区分大小写），在光标附近显示最多 20 条结果，按最近使用的顺序排列；不匹配中间片段或分散字符。
+
+- 上下键选择候选，Enter 确认填入，鼠标单击也可填入。Tab 保留给 shell 自身的补全，不选择历史候选。
+- 选中候选后 Enter 只填入，再按 Enter 才发送；未选择候选时 Enter 直接发送当前输入。
+- Esc 关闭候选窗。Command Window 原有的 Ctrl+Up/Down 历史回看和右键历史管理仍可使用。
+- 在 Command Window 中按 Ctrl+H，或右键选择 `View History...` 打开历史管理窗口。可用 Ctrl/Shift 多选，点击 `Delete Selected` 或按 Delete 删除错误记录；删除立即保存并从补全候选中移除。再次输入并执行相同命令时仍会重新记录。
+
+历史保存在应用配置目录的 `command_history.json`，首次使用自动导入原有的 `command_history.txt`。终端根据实际回显记录命令，不记录关闭回显的密码输入、全屏应用的备用屏幕输入和串口二进制输入。终端回填依赖 shell 的行编辑支持；多行命令需要 shell 支持括号粘贴模式。
 
 ## 串口 text / bin 模式
 在会话属性的串口设置中选择 `Data Mode`，默认 `text`，旧会话保持文本模式。

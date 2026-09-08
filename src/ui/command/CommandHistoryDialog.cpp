@@ -1,5 +1,6 @@
 #include "CommandHistoryDialog.h"
-#include "ui/terminal/BaseTerminal.h"
+#include "core/CommandHistory.h"
+#include <QShortcut>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -15,7 +16,7 @@
 #include <QLabel>
 #include <QDialogButtonBox>
 
-CommandHistoryDialog::CommandHistoryDialog(const QStringList &history, QWidget *parent)
+CommandHistoryDialog::CommandHistoryDialog(QWidget *parent)
     : QDialog(parent) {
     setWindowTitle(tr("Command History"));
     setMinimumSize(500, 400);
@@ -24,12 +25,13 @@ CommandHistoryDialog::CommandHistoryDialog(const QStringList &history, QWidget *
 
     // 历史记录列表
     listWidget_ = new QListWidget(this);
-    listWidget_->setSelectionMode(QAbstractItemView::SingleSelection);
+    listWidget_->setObjectName(QStringLiteral("commandHistoryList"));
+    listWidget_->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // 按时间倒序显示（最新的在最上面）
-    for (auto i = history.size() - 1; i >= 0; --i) {
-        listWidget_->addItem(history[i]);
-    }
+    reloadHistory();
+    connect(&CommandHistory::instance(), &CommandHistory::changed,
+            this, &CommandHistoryDialog::reloadHistory);
 
     layout->addWidget(new QLabel(tr("Double-click to select a command:")));
     layout->addWidget(listWidget_);
@@ -37,13 +39,27 @@ CommandHistoryDialog::CommandHistoryDialog(const QStringList &history, QWidget *
     // 按钮
     auto *buttonLayout = new QHBoxLayout();
 
+    auto *deleteButton = new QPushButton(tr("Delete Selected"), this);
+    deleteButton->setObjectName(QStringLiteral("deleteHistorySelection"));
+    deleteButton->setEnabled(false);
+    deleteButton->setAutoDefault(false);
+    connect(deleteButton, &QPushButton::clicked, this, &CommandHistoryDialog::onDeleteSelected);
+    connect(listWidget_, &QListWidget::itemSelectionChanged, this, [this, deleteButton]() {
+        deleteButton->setEnabled(!listWidget_->selectedItems().isEmpty());
+    });
+    auto *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), listWidget_);
+    deleteShortcut->setContext(Qt::WidgetShortcut);
+    connect(deleteShortcut, &QShortcut::activated, this, &CommandHistoryDialog::onDeleteSelected);
+
     auto *clearButton = new QPushButton(tr("Clear History"), this);
+    clearButton->setAutoDefault(false);
     clearButton->setIcon(QIcon::fromTheme("edit-clear"));
     connect(clearButton, &QPushButton::clicked, this, &CommandHistoryDialog::onClearHistory);
 
     auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
+    buttonLayout->addWidget(deleteButton);
     buttonLayout->addWidget(clearButton);
     buttonLayout->addStretch();
     buttonLayout->addWidget(buttonBox);
@@ -52,6 +68,22 @@ CommandHistoryDialog::CommandHistoryDialog(const QStringList &history, QWidget *
 
     connect(listWidget_, &QListWidget::itemDoubleClicked,
             this, &CommandHistoryDialog::onItemDoubleClicked);
+}
+
+void CommandHistoryDialog::reloadHistory() {
+    listWidget_->clear();
+    const auto &history = CommandHistory::instance().commands();
+    for (auto it = history.crbegin(); it != history.crend(); ++it) {
+        listWidget_->addItem(*it);
+    }
+}
+
+void CommandHistoryDialog::onDeleteSelected() {
+    QStringList commands;
+    for (const auto *item : listWidget_->selectedItems()) {
+        commands.append(item->text());
+    }
+    CommandHistory::instance().remove(commands);
 }
 
 void CommandHistoryDialog::onItemDoubleClicked(QListWidgetItem *item) {
@@ -71,7 +103,6 @@ void CommandHistoryDialog::onClearHistory() {
     );
 
     if (result == QMessageBox::Yes) {
-        emit clearHistoryRequested();
-        listWidget_->clear();
+        CommandHistory::instance().clear();
     }
 }

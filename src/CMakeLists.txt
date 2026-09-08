@@ -7,6 +7,7 @@ set(SRC_FILES main.cpp
         ui/SettingDialog.cpp
         core/CryptoHelper.cpp
         core/ConfigManager.cpp
+        core/CommandHistory.cpp
         core/McpShellEnvironment.cpp
         core/McpShellEnvironment.h
         core/zmodem/ZmodemProtocol.cpp
@@ -25,11 +26,13 @@ set(SRC_FILES main.cpp
         ui/session/SessionEditDialog.cpp
         ui/session/GroupEditDialog.cpp
         ui/terminal/BaseTerminal.cpp
+        ui/terminal/TerminalCommandCompletion.cpp
         ui/terminal/SerialTerminal.cpp
         ui/terminal/LocalTerminal.cpp
         ui/terminal/SSHTerminal.h
         ui/command/CommandHistoryDialog.cpp
         ui/command/CommandWindow.cpp
+        ui/command/CommandCompletionPopup.cpp
         ui/command/CommandButtonBar.cpp
         scriptengine/LuaScriptEngine.cpp
         scriptengine/ScriptRunner.cpp

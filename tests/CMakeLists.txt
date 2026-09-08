@@ -91,6 +91,12 @@ add_executable(serial_terminal_test
         ../src/core/zmodem/ZmodemTransfer.cpp)
 
 target_include_directories(session_timestamp_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+foreach(terminal_test session_timestamp_test serial_terminal_test)
+    target_sources(${terminal_test} PRIVATE
+            ../src/core/CommandHistory.cpp
+            ../src/ui/command/CommandCompletionPopup.cpp
+            ../src/ui/terminal/TerminalCommandCompletion.cpp)
+endforeach()
 target_link_libraries(session_timestamp_test Qt::Widgets qtermwidget ptyqt)
 add_test(NAME session_timestamp_test COMMAND session_timestamp_test)
 set_tests_properties(session_timestamp_test PROPERTIES
@@ -109,3 +115,16 @@ set_tests_properties(serial_terminal_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
 
+add_executable(command_history_test
+        command_history_test.cpp
+        ../src/core/CommandHistory.cpp
+        ../src/ui/command/CommandCompletionPopup.cpp
+        ../src/ui/command/CommandWindow.cpp
+        ../src/ui/command/CommandHistoryDialog.cpp
+        ../src/ui/terminal/TerminalCommandCompletion.cpp)
+target_include_directories(command_history_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(command_history_test Qt::Widgets qtermwidget ptyqt)
+add_test(NAME command_history_test COMMAND command_history_test)
+set_tests_properties(command_history_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 45)

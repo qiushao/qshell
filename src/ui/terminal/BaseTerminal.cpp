@@ -1,4 +1,6 @@
 #include "BaseTerminal.h"
+#include "TerminalCommandCompletion.h"
+#include "TerminalDisplay.h"
 
 #include "core/ConfigManager.h"
 #include "ptyqt.h"
@@ -128,6 +130,10 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     setScrollBarPosition(ScrollBarRight);
     setConfirmMultilinePaste(false);
 
+    commandCompletion_ = new TerminalCommandCompletion(findChild<TerminalDisplay *>());
+    QObject::connect(commandCompletion_, &TerminalCommandCompletion::replaceInput, this,
+                     [this](const QByteArray &data) { sendUserData(data); });
+
     if (globalSettings.copyOnSelect) {
         QObject::connect(this, &QTermWidget::copyAvailable, this, &BaseTerminal::onCopyAvailable);
     }
@@ -159,12 +165,14 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     QObject::connect(this, &QTermWidget::sendData, this,
                      [this](const char *data, int size) {
                          if (xyModemTransfer_->isActive()) {
+                             commandCompletion_->reset();
                              if (size == 1 && data[0] == 0x03) {
                                  xyModemTransfer_->cancel();
                              }
                              return;
                          }
                          if (zmodemTransfer_->isActive()) {
+                             commandCompletion_->reset();
                              if (size == 1 && data[0] == 0x03) {
                                  zmodemTransfer_->cancel();
                              }
@@ -450,6 +458,11 @@ bool BaseTerminal::sendBinaryData(const QByteArray &data) {
 }
 
 void BaseTerminal::sendUserData(const QByteArray &data) {
+    if (isConnect() && !isBinarySerial()) {
+        commandCompletion_->beforeSend(data);
+    } else {
+        commandCompletion_->reset();
+    }
     writeToBackend(data);
     const XyModemCommand command = xyModemCommandDetector_.consume(data);
     if (command != XyModemCommand::None) {
@@ -487,6 +500,11 @@ void BaseTerminal::displayBackendData(
 void BaseTerminal::displayTerminalData(
         const QByteArray &data) {
     recvData(data.constData(), static_cast<int>(data.size()));
+    if (isConnect() && !isBinarySerial() && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive()) {
+        commandCompletion_->afterOutput();
+    } else {
+        commandCompletion_->reset();
+    }
 }
 
 bool BaseTerminal::prepareZmodemUpload(
