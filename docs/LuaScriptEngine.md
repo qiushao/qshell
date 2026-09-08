@@ -96,22 +96,18 @@ qshell.screen.sendText("ls -la\r")
 ---
 
 #### `qshell.screen.sendBinary(data)`
-向当前终端直接发送 Lua 字符串中的原始字节，保留 `00`、`80`、`FF` 等所有字节值。
-不进行文本编码、转义替换或十六进制解析，不附加回车或换行，也不需要按回车触发发送。
-串口 `text` 和 `bin` 模式均可使用；`bin` 模式会将发送字节以十六进制回显到终端。
-此接口也可向 SSH、本地终端的后端写入原始字节，后续处理由终端或远端程序决定。
+串口 `bin` 模式使用。向当前终端发送单个字节或字节数组，不附加回车或换行。 会将发送字节以十六进制回显到终端。
 
-**参数**: `data` 为 Lua 字符串，可用 `string.char(...)`、`string.pack(...)` 或以 `rb` 模式读取文件构造。
+**参数**: `data` 为 `0–255` 的整数，或由这些整数组成的 Lua 数组（从索引 1 开始连续排列）。数组按索引顺序发送，每个整数对应一个字节。
 
 **返回值**: `boolean` - 已向当前连接的后端提交数据时为 `true`，不代表设备已确认收到。
-没有当前会话、会话未连接或正在进行/等待文件传输时返回 `false`。
-空字符串在允许发送时返回 `true`，不发送数据、不产生回显。
+参数类型错误、数值越界、包含小数或数组索引不连续时返回 `false`，不发送任何字节。
+没有当前会话、会话未连接或正在进行/等待文件传输时也返回 `false`。
+空数组在允许发送时返回 `true`，不发送数据、不产生回显。
 
 ```lua
-assert(qshell.screen.sendBinary(string.char(0x41, 0x00, 0xFF)))
-assert(qshell.screen.sendBinary("\x41\x00\xFF"))  -- 同样发送 41 00 FF
-assert(qshell.screen.sendBinary(string.pack("<I2", 0x1234)))  -- 发送 34 12
--- sendBinary("41 00 FF") 会发送这 8 个 ASCII 字符，不会解析为三个字节。
+qshell.screen.sendBinary(0xC0)             -- 发送 C0
+qshell.screen.sendBinary({0x41, 0x00, 0xFF}) -- 发送 41 00 FF
 ```
 
 ---

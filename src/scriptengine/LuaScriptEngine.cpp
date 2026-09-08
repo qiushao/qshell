@@ -17,6 +17,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <algorithm>
+#include <iterator>
 #include <thread>
 #include <utility>
 
@@ -275,8 +276,30 @@ void LuaScriptEngine::registerScreenModule(sol::table& qshell)
             Q_ARG(QString, qstr));
     });
 
-    screen.set_function("sendBinary", [this](const std::string& data) -> bool {
-        const QByteArray bytes(data.data(), static_cast<qsizetype>(data.size()));
+    screen.set_function("sendBinary", [this](const sol::object& data) -> bool {
+        QByteArray bytes;
+        auto appendByte = [&bytes](const sol::object& value) -> bool {
+            if (value.get_type() != sol::type::number) {
+                return false;
+            }
+            const double number = value.as<double>();
+            if (!(number >= 0 && number <= 255) || number != static_cast<int>(number)) {
+                return false;
+            }
+            bytes.append(static_cast<char>(static_cast<unsigned char>(number)));
+            return true;
+        };
+        if (data.is<sol::table>()) {
+            const sol::table values = data.as<sol::table>();
+            const qsizetype size = std::distance(values.begin(), values.end());
+            for (qsizetype i = 0; i < size; ++i) {
+                if (!appendByte(values.raw_get<sol::object>(i + 1))) {
+                    return false;
+                }
+            }
+        } else if (!appendByte(data)) {
+            return false;
+        }
         bool sent = false;
         QMetaObject::invokeMethod(mainWindow_, [this, bytes, &sent]() {
             sent = mainWindow_->sendBinaryToCurrent(bytes);
