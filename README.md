@@ -28,6 +28,12 @@
 ## Lua script engine
 请参考 [LuaScriptEngine](./docs/LuaScriptEngine.md)
 
+## 串口 text / bin 模式
+在会话属性的串口设置中选择 `Data Mode`，默认 `text`，旧会话保持文本模式。
+`bin` 模式以十六进制显示接收字节，在会话底部输入框输入 `41 00 FF` 或 `4100FF`，按回车发送三个原始字节，不附加换行。发送内容也会以十六进制回显在终端中。
+每个字节必须包含两位十六进制数字；非法输入不会发送，并保留在输入框中。命令窗口也可输入十六进制字节并回车发送。
+`bin` 模式不启用 XMODEM、YMODEM、ZMODEM 文件传输及自动识别。
+
 ## MCP
 启用方式、Codex 配置和验证步骤请参考 [QShell MCP](./docs/MCP.md)。
 

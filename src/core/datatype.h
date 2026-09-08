@@ -87,6 +87,11 @@ struct SSHConfig {
     }
 };
 
+enum class SerialDataMode {
+    Text,
+    Bin
+};
+
 // 串口配置
 struct SerialConfig {
     QString portName;
@@ -95,6 +100,7 @@ struct SerialConfig {
     Parity parity = Parity::None;
     StopBits stopBits = StopBits::One;
     FlowControl flowControl = FlowControl::None;
+    SerialDataMode dataMode = SerialDataMode::Text;
 
     QJsonObject toJson() const {
         QJsonObject obj;
@@ -104,6 +110,7 @@ struct SerialConfig {
         obj["parity"] = static_cast<int>(parity);
         obj["stopBits"] = static_cast<int>(stopBits);
         obj["flowControl"] = static_cast<int>(flowControl);
+        obj["dataMode"] = dataMode == SerialDataMode::Bin ? "bin" : "text";
         return obj;
     }
 
@@ -115,6 +122,7 @@ struct SerialConfig {
         config.parity = static_cast<Parity>(obj["parity"].toInt());
         config.stopBits = static_cast<StopBits>(obj["stopBits"].toInt());
         config.flowControl = static_cast<FlowControl>(obj["flowControl"].toInt());
+        config.dataMode = obj["dataMode"].toString() == "bin" ? SerialDataMode::Bin : SerialDataMode::Text;
         return config;
     }
 };

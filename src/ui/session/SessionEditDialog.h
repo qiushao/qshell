@@ -59,6 +59,7 @@ private:
     QComboBox* parityCombo_ = nullptr;
     QComboBox* stopBitsCombo_ = nullptr;
     QComboBox* flowControlCombo_ = nullptr;
+    QComboBox* serialDataModeCombo_ = nullptr;
 };
 
 #endif // SESSIONDIALOG_H

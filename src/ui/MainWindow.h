@@ -44,6 +44,7 @@ public:
     Q_INVOKABLE bool connectCurrentSession();
     Q_INVOKABLE bool disconnectCurrentSession() const;
     Q_INVOKABLE bool sendTextToCurrent(QString text, bool interpretEscapes = true);
+    Q_INVOKABLE bool sendBinaryToCurrent(const QByteArray &data);
     Q_INVOKABLE bool sendKeyToCurrent(const QString &keyName);
     Q_INVOKABLE bool clearCurrentScreen();
     Q_INVOKABLE bool prepareZmodemUpload(const QStringList &filePaths);

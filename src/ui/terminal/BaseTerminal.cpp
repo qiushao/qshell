@@ -173,15 +173,7 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
                          if (pendingXyModemCommand_ != XyModemCommand::None && size == 1 && data[0] == 0x03) {
                              clearPendingXyModemCommand();
                          }
-                         const QByteArray outboundData(data, size);
-                         writeToBackend(outboundData);
-                         const XyModemCommand command =
-                                 xyModemCommandDetector_.consume(
-                                         outboundData);
-                         if (command == XyModemCommand::None) {
-                             return;
-                         }
-                         beginPendingXyModemCommand(command);
+                         sendUserData(QByteArray(data, size));
                      });
     QObject::connect(xyModemTransfer_,
                      &XyModemTransfer::outboundData,
@@ -438,7 +430,40 @@ void BaseTerminal::onCopyAvailable(bool copyAvailable) {
     }
 }
 
+bool BaseTerminal::isBinarySerial() const {
+    return sessionData_.protocolType == ProtocolType::Serial &&
+           sessionData_.serialConfig.dataMode == SerialDataMode::Bin;
+}
+
+bool BaseTerminal::sendBinaryData(const QByteArray &data) {
+    if (!isConnect() || xyModemTransfer_->isActive() || zmodemTransfer_->isActive() ||
+        pendingXyModemCommand_ != XyModemCommand::None) {
+        return false;
+    }
+    if (!data.isEmpty()) {
+        writeToBackend(data);
+        if (isBinarySerial()) {
+            displayTerminalData(data.toHex(' ').toUpper() + "\r\n");
+        }
+    }
+    return true;
+}
+
+void BaseTerminal::sendUserData(const QByteArray &data) {
+    writeToBackend(data);
+    const XyModemCommand command = xyModemCommandDetector_.consume(data);
+    if (command != XyModemCommand::None) {
+        beginPendingXyModemCommand(command);
+    }
+}
+
 void BaseTerminal::receiveBackendData(const QByteArray &data) {
+    if (isBinarySerial()) {
+        if (!data.isEmpty()) {
+            displayTerminalData(data.toHex(' ').toUpper() + "\r\n");
+        }
+        return;
+    }
     if (xyModemTransfer_->isActive()) {
         const QByteArray terminalData =
                 xyModemTransfer_->consume(data);
@@ -466,7 +491,7 @@ void BaseTerminal::displayTerminalData(
 
 bool BaseTerminal::prepareZmodemUpload(
         const QStringList &filePaths) {
-    if (!isConnect() || zmodemTransfer_->isActive() || filePaths.isEmpty()) {
+    if (isBinarySerial() || !isConnect() || zmodemTransfer_->isActive() || filePaths.isEmpty()) {
         return false;
     }
 
@@ -487,7 +512,7 @@ bool BaseTerminal::prepareZmodemUpload(
 
 bool BaseTerminal::prepareZmodemDownload(
         const QString &directoryPath) {
-    if (!isConnect() || zmodemTransfer_->isActive()) {
+    if (isBinarySerial() || !isConnect() || zmodemTransfer_->isActive()) {
         return false;
     }
 
@@ -991,7 +1016,7 @@ void BaseTerminal::closeXyModemProgress() {
 
 void BaseTerminal::populateFileTransferMenu(QMenu *menu) {
     const bool canStartFileTransfer =
-            isConnect() && pendingXyModemCommand_ == XyModemCommand::None && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
+            !isBinarySerial() && isConnect() && pendingXyModemCommand_ == XyModemCommand::None && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive();
 
     QAction *sendXmodemAction =
             menu->addAction(

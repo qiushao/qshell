@@ -5,6 +5,8 @@
 #include "core/datatype.h"
 #include <QtSerialPort/QSerialPort>
 
+class QLineEdit;
+
 class SerialTerminal : public BaseTerminal {
 public:
     explicit SerialTerminal(const SessionData &session, QWidget *parent);
@@ -13,11 +15,15 @@ public:
     void disconnect() override;
 
 protected:
+    void sendUserData(const QByteArray &data) override;
     void writeToBackend(const QByteArray &data) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void handleError(QSerialPort::SerialPortError error);
+    void sendBinaryInput();
     QSerialPort *serial_ = nullptr;
+    QLineEdit *binaryInput_ = nullptr;
 };
 
 

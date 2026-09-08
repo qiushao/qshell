@@ -275,6 +275,15 @@ void LuaScriptEngine::registerScreenModule(sol::table& qshell)
             Q_ARG(QString, qstr));
     });
 
+    screen.set_function("sendBinary", [this](const std::string& data) -> bool {
+        const QByteArray bytes(data.data(), static_cast<qsizetype>(data.size()));
+        bool sent = false;
+        QMetaObject::invokeMethod(mainWindow_, [this, bytes, &sent]() {
+            sent = mainWindow_->sendBinaryToCurrent(bytes);
+        }, Qt::BlockingQueuedConnection);
+        return sent;
+    });
+
     screen.set_function("sendKey", [this](const std::string& keyName) {
         QString qkey = QString::fromStdString(keyName);
         QMetaObject::invokeMethod(mainWindow_, "onSendKey",

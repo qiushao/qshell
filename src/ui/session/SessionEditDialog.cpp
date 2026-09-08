@@ -211,6 +211,12 @@ QWidget* SessionEditDialog::createSerialSection() {
     flowControlCombo_->addItem(tr("Software (XON/XOFF)"), static_cast<int>(FlowControl::Software));
     layout->addRow(tr("Flow Control:"), flowControlCombo_);
 
+    serialDataModeCombo_ = new QComboBox(groupBox);
+    serialDataModeCombo_->addItem("text", static_cast<int>(SerialDataMode::Text));
+    serialDataModeCombo_->addItem("bin", static_cast<int>(SerialDataMode::Bin));
+    serialDataModeCombo_->setToolTip(tr("bin: display and enter hexadecimal bytes, e.g. 41 00 FF."));
+    layout->addRow(tr("Data Mode:"), serialDataModeCombo_);
+
     // 初始化串口列表
     onRefreshPorts();
 
@@ -283,6 +289,7 @@ void SessionEditDialog::setSessionData(const SessionData& data) {
     parityCombo_->setCurrentIndex(parityCombo_->findData(static_cast<int>(data.serialConfig.parity)));
     stopBitsCombo_->setCurrentIndex(stopBitsCombo_->findData(static_cast<int>(data.serialConfig.stopBits)));
     flowControlCombo_->setCurrentIndex(flowControlCombo_->findData(static_cast<int>(data.serialConfig.flowControl)));
+    serialDataModeCombo_->setCurrentIndex(serialDataModeCombo_->findData(static_cast<int>(data.serialConfig.dataMode)));
 }
 
 SessionData SessionEditDialog::sessionData() const {
@@ -311,6 +318,7 @@ SessionData SessionEditDialog::sessionData() const {
     data.serialConfig.parity = static_cast<Parity>(parityCombo_->currentData().toInt());
     data.serialConfig.stopBits = static_cast<StopBits>(stopBitsCombo_->currentData().toInt());
     data.serialConfig.flowControl = static_cast<FlowControl>(flowControlCombo_->currentData().toInt());
+    data.serialConfig.dataMode = static_cast<SerialDataMode>(serialDataModeCombo_->currentData().toInt());
 
     return data;
 }

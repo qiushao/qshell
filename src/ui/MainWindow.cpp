@@ -1934,6 +1934,10 @@ bool MainWindow::sendTextToCurrent(QString text, bool interpretEscapes) {
     return true;
 }
 
+bool MainWindow::sendBinaryToCurrent(const QByteArray &data) {
+    return currentTab_ != nullptr && currentTab_->sendBinaryData(data);
+}
+
 bool MainWindow::clearCurrentScreen() {
     if (currentTab_ == nullptr) {
         return false;

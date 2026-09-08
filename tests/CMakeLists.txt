@@ -76,8 +76,36 @@ add_executable(session_timestamp_test
         ../src/core/xymodem/XyModemTransfer.cpp
         ../src/core/zmodem/ZmodemProtocol.cpp
         ../src/core/zmodem/ZmodemTransfer.cpp)
+
+add_executable(serial_terminal_test
+        serial_terminal_test.cpp
+        ../src/ui/terminal/SerialTerminal.cpp
+        ../src/ui/terminal/BaseTerminal.cpp
+        ../src/ui/session/SessionEditDialog.cpp
+        ../src/core/ConfigManager.cpp
+        ../src/core/CryptoHelper.cpp
+        ../src/core/xymodem/XyModemCommandDetector.cpp
+        ../src/core/xymodem/XyModemProtocol.cpp
+        ../src/core/xymodem/XyModemTransfer.cpp
+        ../src/core/zmodem/ZmodemProtocol.cpp
+        ../src/core/zmodem/ZmodemTransfer.cpp)
+
 target_include_directories(session_timestamp_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(session_timestamp_test Qt::Widgets qtermwidget ptyqt)
 add_test(NAME session_timestamp_test COMMAND session_timestamp_test)
 set_tests_properties(session_timestamp_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+target_include_directories(serial_terminal_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(serial_terminal_test
+        Qt::Widgets
+        Qt::SerialPort
+        qtermwidget
+        ptyqt)
+
+add_test(NAME serial_terminal_test COMMAND serial_terminal_test)
+set_tests_properties(serial_terminal_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
+

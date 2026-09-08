@@ -30,6 +30,7 @@ public:
     virtual void connect() = 0;
     virtual void disconnect() = 0;
     bool isConnect() const;
+    bool sendBinaryData(const QByteArray &data);
 
     // 日志相关方法
     bool isLogging() const;
@@ -51,7 +52,10 @@ protected:
     void onDisplayOutput(const QString &line, const QString &timestamp);
     void onCopyAvailable(bool copyAvailable);
     void receiveBackendData(const QByteArray &data);
+    void displayTerminalData(const QByteArray &data);
+    virtual void sendUserData(const QByteArray &data);
     virtual void writeToBackend(const QByteArray &data) = 0;
+    bool isBinarySerial() const;
 
     void focusInEvent(QFocusEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
@@ -86,7 +90,6 @@ private:
     void startPendingXyModemTransfer();
     void clearPendingXyModemCommand();
     void displayBackendData(const QByteArray &data);
-    void displayTerminalData(const QByteArray &data);
     void onXyModemFileStarted(XyModemTransfer::Protocol protocol,
                               XyModemTransfer::Direction direction,
                               const QString &fileName,
