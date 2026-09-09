@@ -334,6 +334,21 @@ void terminalTest() {
     completion.beforeSend("ech");
     output("ech");
     require(popup->isVisible(), "re-enabling completion did not restore terminal suggestions");
+    for (const QString &input : {QString::fromUtf8("cd 中文/ "), QStringLiteral("cd ") + QString(terminal.screenColumnsCount() - 9, QLatin1Char('x')) + "  "}) {
+        completion.reset();
+        output("\r\nuser$ ");
+        history.clear();
+        const QString command = input + "target/";
+        history.add(command);
+        completion.beforeSend(input.toUtf8());
+        output(input.toUtf8());
+        require(popup->isVisible(), "Unicode or wrapped input with trailing spaces did not show suggestions");
+        replacement.clear();
+        key(display, Qt::Key_Down);
+        key(display, Qt::Key_Return, "\r");
+        require(replacement == QByteArray("\x05") + QByteArray(input.size(), '\x7f') + command.toUtf8(),
+                "Unicode or wrapped completion did not preserve trailing spaces when erasing input");
+    }
     terminal.hide();
 }
 
@@ -441,6 +456,28 @@ void shellTest(const QString &directory) {
     terminal.sendText("android-projects");
     waitFor([&]() { return screenText().trimmed().endsWith("test$ cd sources/android-projects"); }, "complete path input was not echoed");
     require(popup->isVisible() && popup->count() == 1 && popup->item(0)->text() == "cd sources/android-projects", "shell popup retained a path that did not match the complete input");
+    for (const QString &input : {QStringLiteral("cd"), QStringLiteral("cd "), QStringLiteral("cd  "), QStringLiteral("cd sources/")}) {
+        received.clear();
+        key(display, Qt::Key_C, "\x03", Qt::ControlModifier);
+        waitFor([&]() { return received.endsWith("test$ "); }, "shell did not return to prompt before whitespace completion test");
+        history.clear();
+        const QString command = input == "cd  " ? "cd  sources/clion-projects/qshell/" : "cd sources/clion-projects/qshell/";
+        history.add(command);
+        received.clear();
+        terminal.sendText(input);
+        waitFor([&]() { return received.contains(input.toUtf8()) && popup->isVisible(); }, "completion input was not echoed");
+        if (input == "cd sources/") {
+            received.clear();
+            terminal.sendText("\x02");
+            waitFor([&]() { return !received.isEmpty(); }, "shell cursor did not move before completion");
+        }
+        replacement.clear();
+        key(display, Qt::Key_Down);
+        key(display, Qt::Key_Return, "\r");
+        require(replacement.count('\x7f') == input.size(), "completion did not erase all input characters including trailing spaces");
+        require(!replacement.contains('\r') && !replacement.contains('\n'), "whitespace completion executed the command");
+        waitFor([&]() { return screenText().trimmed().endsWith("test$ " + command); }, "completion left characters from the previous input in bash");
+    }
     terminal.hide();
     shell->kill();
 }

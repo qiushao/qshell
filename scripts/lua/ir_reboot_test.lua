@@ -10,3 +10,4 @@ end
 
 ir:close()
 qshell.log("finish ir test")
+qshell.setLogFile("")

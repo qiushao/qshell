@@ -69,17 +69,22 @@ QString TerminalCommandCompletion::inputText() const {
         rowText(current, startRow_, 0, startColumn_) != prefix_) return {};
 
     QString text;
+    qsizetype cursorTextLength = 0;
+    const int cursorRow = current->getHistLines() + current->getCursorY();
     int row = startRow_;
     int column = startColumn_;
     do {
+        if (row == cursorRow && current->getCursorX() >= column) {
+            cursorTextLength = text.size() + rowText(current, row, column, current->getCursorX() - column).size();
+        }
         text += rowText(current, row, column, current->getColumns() - column);
         const bool wrapped = current->getLineProperties(row, row).first() & LINE_WRAPPED;
         if (!wrapped) break;
         ++row;
         column = 0;
     } while (row < current->getHistLines() + current->getLines());
-    // Screen padding is not part of the command; preserve spaces inside wrapped lines.
-    while (text.endsWith(QLatin1Char(' '))) text.chop(1);
+    // Only trim screen padding beyond the cursor; spaces before it belong to the input.
+    while (text.size() > cursorTextLength && text.endsWith(QLatin1Char(' '))) text.chop(1);
     return text;
 }
 
