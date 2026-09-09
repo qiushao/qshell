@@ -5,6 +5,7 @@
 #include "ptyqt.h"
 #include "qtermwidget.h"
 #include "ui/command/CommandWindow.h"
+#include "ui/terminal/BaseTerminal.h"
 #include "ui/terminal/TerminalCommandCompletion.h"
 
 #include <QApplication>
@@ -352,6 +353,64 @@ void terminalTest() {
     terminal.hide();
 }
 
+void terminalResponseTest() {
+    class TestTerminal : public BaseTerminal {
+    public:
+        TestTerminal() : BaseTerminal(nullptr) {
+            sessionData_.protocolType = ProtocolType::LocalShell;
+            connect_ = true;
+        }
+        void connect() override {}
+        void disconnect() override {}
+        void writeToBackend(const QByteArray &data) override { sent += data; }
+        using BaseTerminal::displayTerminalData;
+        QByteArray sent;
+    };
+
+    auto &history = CommandHistory::instance();
+    history.clear();
+    const QString border = QString::fromUtf8("╭──────────────────────────────────────────────────╮");
+    history.add(border);
+    history.add("echo hello");
+    TestTerminal terminal;
+    terminal.resize(800, 400);
+    terminal.show();
+    auto *display = terminal.findChild<TerminalDisplay *>();
+    display->setFocus();
+    QApplication::processEvents();
+    auto *popup = display->findChild<QListWidget *>("commandCompletionPopup");
+    auto output = [&](const QByteArray &data) {
+        terminal.displayTerminalData(data);
+        QApplication::processEvents();
+    };
+    output("user$ ");
+    terminal.sendText("codex\r");
+    output("codex\r\n");
+    require(history.commands().last() == "codex", "application launch command was not recorded");
+    const QStringList saved = history.commands();
+    for (const QByteArray &query : {QByteArray("\x1b[6n"), QByteArray("\x1b[5n"), QByteArray("\x1b[c"), QByteArray("\x1b[>c")}) {
+        terminal.sent.clear();
+        output(query);
+        require(!terminal.sent.isEmpty(), "terminal query response did not reach the backend");
+        output(border.toUtf8());
+        require(!popup->isVisible(), "terminal query response opened completion for an application border");
+        terminal.sendText("\r");
+        output("\r\n");
+        require(history.commands() == saved, "application border was recorded as a command after a terminal response");
+    }
+
+    output("user$ ");
+    terminal.sendText("ech");
+    output("ech");
+    require(popup->isVisible(), "normal input did not show completion after terminal responses");
+    output("\x1b[6n");
+    require(popup->isVisible(), "terminal response interrupted completion for active input");
+    terminal.sendText("o hello\r");
+    output("o hello\r\nhello\r\nuser$ ");
+    require(history.commands().last() == "echo hello", "terminal response interrupted command history capture");
+    terminal.hide();
+}
+
 #ifdef Q_OS_LINUX
 void shellTest(const QString &directory) {
     auto &history = CommandHistory::instance();
@@ -495,6 +554,7 @@ int main(int argc, char *argv[]) {
     editorTest();
     managementTest();
     terminalTest();
+    terminalResponseTest();
 #ifdef Q_OS_LINUX
     shellTest(directory.path());
 #endif

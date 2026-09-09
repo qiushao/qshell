@@ -141,6 +141,12 @@ set_tests_properties(serial_terminal_test PROPERTIES
 
 add_executable(command_history_test
         command_history_test.cpp
+        ../src/ui/terminal/BaseTerminal.cpp
+        ../src/core/xymodem/XyModemCommandDetector.cpp
+        ../src/core/xymodem/XyModemProtocol.cpp
+        ../src/core/xymodem/XyModemTransfer.cpp
+        ../src/core/zmodem/ZmodemProtocol.cpp
+        ../src/core/zmodem/ZmodemTransfer.cpp
         ../src/core/ConfigManager.cpp
         ../src/core/CryptoHelper.cpp
         ../src/core/CommandHistory.cpp

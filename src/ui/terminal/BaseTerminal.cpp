@@ -17,6 +17,7 @@
 #include <QProgressDialog>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
 #include <QSplitter>
 #include <QTextStream>
 #include <QTimer>
@@ -459,7 +460,8 @@ bool BaseTerminal::sendBinaryData(const QByteArray &data) {
 
 void BaseTerminal::sendUserData(const QByteArray &data) {
     if (isConnect() && !isBinarySerial()) {
-        commandCompletion_->beforeSend(data);
+        // Replies generated while parsing terminal output are not user input.
+        if (!processingOutput_) commandCompletion_->beforeSend(data);
     } else {
         commandCompletion_->reset();
     }
@@ -499,7 +501,10 @@ void BaseTerminal::displayBackendData(
 
 void BaseTerminal::displayTerminalData(
         const QByteArray &data) {
-    recvData(data.constData(), static_cast<int>(data.size()));
+    {
+        QScopedValueRollback<bool> processingOutput(processingOutput_, true);
+        recvData(data.constData(), static_cast<int>(data.size()));
+    }
     if (isConnect() && !isBinarySerial() && !xyModemTransfer_->isActive() && !zmodemTransfer_->isActive()) {
         commandCompletion_->afterOutput();
     } else {

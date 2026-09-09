@@ -139,6 +139,7 @@ private:
     QStringList pendingZmodemUploadPaths_;
     QString pendingZmodemDownloadDirectory_;
     TerminalCommandCompletion *commandCompletion_ = nullptr;
+    bool processingOutput_ = false;
 };
 
 #endif//QSHELL_BASE_TERMINAL_H
