@@ -1,3 +1,23 @@
+if (UNIX)
+    add_executable(lua_serial_test
+            lua_serial_test.cpp
+            ../src/scriptengine/LuaSerialModule.cpp)
+    target_include_directories(lua_serial_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(lua_serial_test Qt::Core Qt::SerialPort lua_static sol2)
+    add_test(NAME lua_serial_test COMMAND lua_serial_test)
+    set_tests_properties(lua_serial_test PROPERTIES TIMEOUT 15)
+endif ()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if (Python3_Interpreter_FOUND)
+        add_test(NAME lua_serial_integration_test
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/lua_serial_integration_test.py
+                $<TARGET_FILE:qshell>)
+        set_tests_properties(lua_serial_integration_test PROPERTIES TIMEOUT 30)
+    endif ()
+endif ()
+
 add_executable(qtermwidget_on_new_line_test
         qtermwidget_on_new_line_test.cpp)
 

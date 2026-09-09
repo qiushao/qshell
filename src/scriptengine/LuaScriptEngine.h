@@ -1,5 +1,6 @@
 // LuaScriptEngine.h
 #pragma once
+#include "LuaSerialModule.h"
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -49,6 +50,7 @@ private:
                                    sol::optional<sol::table> options);
 
     sol::state lua_;
+    LuaSerialModule serialModule_;
     MainWindow *mainWindow_ = nullptr;
     std::atomic<bool> running_{false};
     bool isWaitForString_ = false;

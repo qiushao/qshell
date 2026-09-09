@@ -469,6 +469,90 @@ qshell.log("当前有 " .. n .. " 个活动定时器")
 ```
 
 
+### 6. 串口模块 (`qshell.serial`)
+
+直接按设备路径打开串口，可同时操作多个设备，不依赖当前终端标签页。
+同一设备若已被终端会话或其他程序占用，需先断开对应连接。
+
+#### `qshell.serial.open(path, [options])`
+
+返回串口对象，后续使用冒号调用方法。打开或配置失败会抛出 Lua 错误，
+可以使用 `pcall` 捕获。串口在脚本正常结束、报错或停止时自动关闭；也可主动 `close()`。
+脚本结束后保留在全局变量中的串口对象已关闭，下一次运行需要重新打开。
+
+| 选项 | 默认值 | 可选值 |
+|------|--------|--------|
+| `baudRate` | `115200` | 设备支持的正整数波特率 |
+| `dataBits` | `8` | `5`、`6`、`7`、`8` |
+| `parity` | `"none"` | `"none"`、`"even"`、`"odd"`、`"space"`、`"mark"` |
+| `stopBits` | `1` | `1`、`1.5`、`2`（取决于平台/设备支持） |
+| `flowControl` | `"none"` | `"none"`、`"hardware"`、`"software"` |
+
+```lua
+local ok, port = pcall(qshell.serial.open, "/dev/ttyUSB2", {baudRate = 115200})
+if not ok then
+    qshell.log(port) -- 错误原因
+    return
+end
+port:writeText("echo hello\r")
+qshell.log(port:readText(4096, 1000))
+port:close()
+```
+
+#### `port:writeText(text, [timeoutMs])`
+
+原样发送 Lua 字符串，不附加换行、不转换编码，保留内嵌 `\0`。
+UTF-8 文本可直接传入；其他编码需要调用方自行处理。
+返回写出的字节数，空字符串返回 `0`。`timeoutMs` 默认为 `1000` 毫秒，必须非负。
+成功表示数据已交给系统串口驱动，不代表设备已经接收或执行命令。
+写入超时、失败或中断时抛出错误并关闭端口，避免残留待发数据；部分数据可能已经发出。
+
+#### `port:writeBinary(data, [timeoutMs])`
+
+发送原始字节，返回值和超时规则与 `writeText` 相同。`data` 支持：
+
+- 单个 `0..255` 整数，如 `0xC0`。
+- 从索引 1 开始连续排列的整数数组，如 `{0x41, 0x00, 0xFF}`。
+- Lua 二进制字符串，如 `string.char(0x41, 0x00, 0xFF)`。
+
+数组包含非整数、越界值或不连续索引时抛出错误，整次调用不发送任何字节。
+空数组返回 `0`。字符串 `"C0"` 发送的是两个 ASCII 字节，发送单字节命令应使用 `0xC0`。
+
+#### `port:readText([maxBytes], [timeoutMs])`
+#### `port:readBinary([maxBytes], [timeoutMs])`
+
+最多读取 `maxBytes` 个字节（默认 `4096`，必须为正整数），等待首批数据最多
+`timeoutMs` 毫秒（默认 `1000`，必须非负；`0` 表示立即检查）。有数据即返回，
+不等待填满长度、不按行或协议帧分割；未取出的字节保留给下一次读取。
+文本跨多次读取时可能拆分 UTF-8 字符，先拼接完整数据再处理。
+
+`readText` 返回原始 Lua 字符串，`readBinary` 返回 `0..255` 整数数组。
+超时无数据分别返回 `""` 和 `{}`；端口关闭、设备错误或用户停止脚本会抛出错误。
+两种读取方式共享接收缓冲区，数据只消费一次。读写等待可响应停止请求；
+等待期间不执行 Lua 定时器回调，需要时在两次调用间使用 `qshell.timer.process()`。
+
+#### `port:isOpen()` / `port:close()`
+
+`isOpen()` 返回端口是否打开。`close()` 释放端口，可重复调用。
+
+#### Android 开发板与红外控制器
+
+```lua
+local board = qshell.serial.open("/dev/ttyUSB2", {baudRate = 115200})
+local ir = qshell.serial.open("/dev/ttyUSB0", {baudRate = 115200})
+board:writeText("echo hello\r")
+qshell.log(board:readText(4096, 1000))
+ir:writeBinary(0xC0) -- 发送 power 红外码
+ir:close()
+board:close()
+```
+
+两个波特率需要按实际设备设置。完整示例见 `scripts/lua/serial_devices.lua`：
+
+```bash
+qshell --script scripts/lua/serial_devices.lua -- /dev/ttyUSB2 115200 /dev/ttyUSB0 115200
+```
+
 ## 完整示例
 
 ### 示例 1： reboot 压测

@@ -60,6 +60,7 @@ void LuaScriptEngine::registerAPIs()
     registerZmodemModule(qshell);
     registerTimerModule(qshell);
     registerHttpModule(qshell);
+    serialModule_.registerAPIs(lua_, qshell, [] { return gShouldStop.load(); });
 }
 
 // 可中断的 sleep，同时处理定时器
@@ -833,10 +834,12 @@ bool LuaScriptEngine::executeScript(const QString& scriptPath, const QStringList
     
     try {
         auto result = lua_.script_file(scriptPath.toStdString());
+        serialModule_.closeAll();
         running_ = false;
         emit scriptFinished();
         return result.valid();
     } catch (const sol::error& e) {
+        serialModule_.closeAll();
         running_ = false;
         emit scriptError(QString::fromStdString(e.what()));
         return false;
@@ -857,10 +860,12 @@ bool LuaScriptEngine::executeCode(const QString& code)
     
     try {
         auto result = lua_.script(code.toStdString());
+        serialModule_.closeAll();
         running_ = false;
         emit scriptFinished();
         return result.valid();
     } catch (const sol::error& e) {
+        serialModule_.closeAll();
         running_ = false;
         emit scriptError(QString::fromStdString(e.what()));
         return false;
