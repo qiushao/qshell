@@ -2,6 +2,7 @@
 #include "SettingDialog.h"
 #include "command/CommandButtonBar.h"
 #include "core/ConfigManager.h"
+#include "core/LanguageManager.h"
 #include "mcp/McpHttpServer.h"
 #include "scriptengine/LuaScriptEngine.h"
 #include "scriptengine/ScriptRunner.h"
@@ -14,6 +15,7 @@
 #include "ui/terminal/SSHTerminal.h"
 #include "ui/terminal/SerialTerminal.h"
 
+#include <QActionGroup>
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopServices>
@@ -736,11 +738,81 @@ void MainWindow::initMenu() {
     loadRecentScripts();
     updateRecentScriptsMenu();
 
+    languageMenu_ = mainMenuBar_->addMenu(tr("Language"));
+    languageMenu_->setObjectName("languageMenu");
+    auto *languageGroup = new QActionGroup(this);
+    const QList<QPair<QString, QString>> languages = {
+            {"zh_CN", QStringLiteral("简体中文")},
+            {"zh_TW", QStringLiteral("繁體中文")},
+            {"en", QStringLiteral("English")}};
+    for (const auto &language : languages) {
+        auto *action = languageMenu_->addAction(language.second);
+        action->setData(language.first);
+        action->setCheckable(true);
+        action->setChecked(language.first == LanguageManager::instance()->language());
+        languageGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [language]() {
+            LanguageManager::instance()->setLanguage(language.first);
+        });
+    }
+
     helpMenu_ = new QMenu(tr("Help"), mainMenuBar_);
     mainMenuBar_->addAction(helpMenu_->menuAction());
     helpMenu_->addAction(docAction_);
     helpMenu_->addSeparator();
     helpMenu_->addAction(aboutAction_);
+}
+
+void MainWindow::retranslateUi() {
+    settingsAction_->setText(tr("Setting"));
+    importConfigAction_->setText(tr("Import Config..."));
+    exportConfigAction_->setText(tr("Export Config..."));
+    connectAction_->setText(tr("Connect"));
+    disConnectAction_->setText(tr("Disconnect"));
+    exitAction_->setText(tr("Exit"));
+    copySelectedAction_->setText(tr("Copy Selected"));
+    copyAllAction_->setText(tr("Copy All"));
+    pasteAction_->setText(tr("Paste"));
+    findAction_->setText(tr("Find"));
+    clearScreenAction_->setText(tr("Clear Screen"));
+    toggleToolbarAction_->setText(tr("Toolbar"));
+    toggleSessionManagerAction_->setText(tr("Session Manager"));
+    toggleCommandWindowAction_->setText(tr("Command Window"));
+    toggleCommandButtonAction_->setText(tr("Command Button"));
+    fullscreenAction_->setText(tr("Fullscreen"));
+    runLuaScriptAction_->setText(tr("Run Lua Script..."));
+    stopScriptAction_->setText(tr("Stop Script"));
+    docAction_->setText(tr("Documentation"));
+    aboutAction_->setText(tr("About"));
+    fileMenu_->setTitle(tr("File"));
+    editMenu_->setTitle(tr("Edit"));
+    viewMenu_->setTitle(tr("View"));
+    scriptMenu_->setTitle(tr("Script"));
+    helpMenu_->setTitle(tr("Help"));
+    languageMenu_->setTitle(tr("Language"));
+    recentScriptMenu_->setTitle(tr("Recent Scripts"));
+    fileTransferMenu_->setTitle(tr("文件传输"));
+    commandWindowDock_->setWindowTitle(tr("Command Window"));
+    for (auto *action : languageMenu_->actions()) {
+        action->setChecked(action->data().toString() == LanguageManager::instance()->language());
+    }
+    updateRecentScriptsMenu();
+    updateFileTransferMenu();
+    for (auto *label : findChildren<QLabel *>("emptySplitLabel")) {
+        label->setText(tr("空分屏\n\n请选中此区域，然后从会话列表打开会话"));
+    }
+    if (fullscreenWindow_ != nullptr) {
+        if (auto *button = fullscreenWindow_->findChild<QPushButton *>("exitFullscreenBtn")) {
+            button->setToolTip(tr("Exit Fullscreen (Esc)"));
+        }
+    }
+}
+
+void MainWindow::changeEvent(QEvent *event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && commandWindowDock_ != nullptr) {
+        retranslateUi();
+    }
 }
 
 void MainWindow::updateFileTransferMenu() {
@@ -1002,6 +1074,7 @@ QWidget *MainWindow::createEmptySplitPane() {
     label->setAlignment(Qt::AlignCenter);
     label->setWordWrap(true);
     label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    label->setObjectName("emptySplitLabel");
     label->setStyleSheet("color: palette(mid); border: none;");
     layout->addWidget(label);
 

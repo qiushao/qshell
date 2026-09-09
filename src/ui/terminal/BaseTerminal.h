@@ -58,6 +58,7 @@ protected:
     virtual void writeToBackend(const QByteArray &data) = 0;
     bool isBinarySerial() const;
 
+    void changeEvent(QEvent *event) override;
     void focusInEvent(QFocusEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
 
@@ -79,6 +80,7 @@ private:
                               qint64 transferred,
                               qint64 size);
     void closeZmodemProgress();
+    void retranslateZmodemProgress();
     void startXyModemSend(XyModemTransfer::Protocol protocol);
     void startXyModemReceive(XyModemTransfer::Protocol protocol);
     QStringList selectXyModemSendFiles(
@@ -132,7 +134,12 @@ private:
     QString xyModemDirectory_;
     ZmodemTransfer *zmodemTransfer_ = nullptr;
     QProgressDialog *zmodemProgress_ = nullptr;
-    QString zmodemProgressLabel_;
+    ZmodemTransfer::Direction zmodemProgressDirection_ = ZmodemTransfer::Direction::Download;
+    QString zmodemProgressFileName_;
+    int zmodemProgressFileNumber_ = 0;
+    int zmodemProgressFileCount_ = 0;
+    QString zmodemProgressRate_;
+    QString zmodemProgressRemaining_;
     QElapsedTimer zmodemRateTimer_;
     qint64 zmodemRateTransferred_ = 0;
     QString zmodemDirectory_;

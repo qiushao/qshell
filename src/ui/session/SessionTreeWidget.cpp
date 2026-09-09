@@ -1,4 +1,5 @@
 #include "SessionTreeWidget.h"
+#include <QEvent>
 #include "GroupEditDialog.h"
 #include "SessionEditDialog.h"
 #include "core/ConfigManager.h"
@@ -536,4 +537,11 @@ void SessionTreeWidget::handleGroupDrop(const QString &groupId, int dropIndex) {
     }
 
     config->reorderGroups(groupIds);
+}
+
+void SessionTreeWidget::changeEvent(QEvent *event) {
+    QTreeWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        setHeaderLabel(tr("Sessions"));
+    }
 }

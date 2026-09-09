@@ -10,6 +10,7 @@
 #include <QMessageBox>
 
 SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
+    setWindowTitle(tr("Settings"));
     initWidgets();
     fillColorScheme();
     const auto config = ConfigManager::instance();

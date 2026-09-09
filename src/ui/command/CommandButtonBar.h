@@ -31,6 +31,8 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
+    void changeEvent(QEvent *event) override;
+
 private:
     void setupUI();
     void clearButtons();

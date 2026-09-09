@@ -1,4 +1,5 @@
 #include "CommandWindow.h"
+#include <QEvent>
 #include "CommandHistoryDialog.h"
 #include "CommandCompletionPopup.h"
 #include "core/CommandHistory.h"
@@ -192,4 +193,11 @@ bool CommandWindow::eventFilter(QObject *obj, QEvent *e) {
     }
 
     return QWidget::eventFilter(obj, e);
+}
+
+void CommandWindow::changeEvent(QEvent *event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        commandEditor_->setPlaceholderText(tr("Enter command here... (Press Enter to send, Ctrl+Enter for new line)"));
+    }
 }

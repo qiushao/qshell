@@ -8,6 +8,7 @@
 class QLineEdit;
 
 class SerialTerminal : public BaseTerminal {
+    Q_OBJECT
 public:
     explicit SerialTerminal(const SessionData &session, QWidget *parent);
     ~SerialTerminal() override;
@@ -18,6 +19,8 @@ protected:
     void sendUserData(const QByteArray &data) override;
     void writeToBackend(const QByteArray &data) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
+
+    void changeEvent(QEvent *event) override;
 
 private:
     void handleError(QSerialPort::SerialPortError error);

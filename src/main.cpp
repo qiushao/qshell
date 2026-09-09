@@ -5,6 +5,7 @@
 #include <QTimer>
 #include "ui/MainWindow.h"
 #include "core/ConfigManager.h"
+#include "core/LanguageManager.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -47,6 +48,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationVersion(APP_VERSION);
     QCoreApplication::setOrganizationName("qiushao");
     QCoreApplication::setOrganizationDomain("https://github.com/qiushao/qshell");
+    LanguageManager::instance();
     showConsole(ConfigManager::instance()->globalSettings().debug);
 
     // 读取版本信息

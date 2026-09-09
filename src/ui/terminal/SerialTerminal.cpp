@@ -121,3 +121,13 @@ bool SerialTerminal::eventFilter(QObject *watched, QEvent *event) {
     }
     return BaseTerminal::eventFilter(watched, event);
 }
+
+void SerialTerminal::changeEvent(QEvent *event) {
+    BaseTerminal::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        if (binaryInput_ != nullptr) {
+            binaryInput_->setPlaceholderText(tr("Hex bytes, e.g. 41 00 FF (Enter to send)"));
+            binaryInput_->setToolTip(binaryInput_->placeholderText());
+        }
+    }
+}

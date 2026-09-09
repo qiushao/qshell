@@ -694,25 +694,16 @@ void BaseTerminal::onZmodemFileStarted(
         int fileCount) {
     closeZmodemProgress();
 
-    const QString action =
-            direction == ZmodemTransfer::Direction::Download
-                    ? tr("正在下载")
-                    : tr("正在上传");
-    zmodemProgressLabel_ =
-            tr("%1 %2（%3/%4）")
-                    .arg(action, fileName)
-                    .arg(fileNumber)
-                    .arg(fileCount);
+    zmodemProgressDirection_ = direction;
+    zmodemProgressFileName_ = fileName;
+    zmodemProgressFileNumber_ = fileNumber;
+    zmodemProgressFileCount_ = fileCount;
+    zmodemProgressRate_ = QStringLiteral("--");
+    zmodemProgressRemaining_ = QStringLiteral("--");
     zmodemRateTransferred_ = 0;
     zmodemRateTimer_.start();
     zmodemProgress_ = new QProgressDialog(this);
-    zmodemProgress_->setWindowTitle(tr("ZMODEM 文件传输"));
-    zmodemProgress_->setLabelText(
-            tr("%1\n传输速率：%2\n预计剩余时间：%3")
-                    .arg(zmodemProgressLabel_,
-                         QStringLiteral("--"),
-                         QStringLiteral("--")));
-    zmodemProgress_->setCancelButtonText(tr("取消"));
+    retranslateZmodemProgress();
     zmodemProgress_->setRange(0, size <= 0 ? 0 : 1000);
     zmodemProgress_->setValue(0);
     zmodemProgress_->setMinimumDuration(0);
@@ -754,16 +745,9 @@ void BaseTerminal::onZmodemFileProgress(
                                          0,
                                          size)
                         : -1;
-        zmodemProgress_->setLabelText(
-                tr("%1\n传输速率：%2\n预计剩余时间：%3")
-                        .arg(zmodemProgressLabel_,
-                             formatTransferRate(
-                                     transferredSinceUpdate,
-                                     elapsedMilliseconds),
-                             formatRemainingTime(
-                                     remaining,
-                                     transferredSinceUpdate,
-                                     elapsedMilliseconds)));
+        zmodemProgressRate_ = formatTransferRate(transferredSinceUpdate, elapsedMilliseconds);
+        zmodemProgressRemaining_ = formatRemainingTime(remaining, transferredSinceUpdate, elapsedMilliseconds);
+        retranslateZmodemProgress();
         zmodemRateTransferred_ = transferred;
         zmodemRateTimer_.restart();
     }
@@ -780,6 +764,22 @@ void BaseTerminal::onZmodemFileProgress(
     zmodemProgress_->setValue(progress);
 }
 
+void BaseTerminal::retranslateZmodemProgress() {
+    if (zmodemProgress_ == nullptr) {
+        return;
+    }
+    const QString action = zmodemProgressDirection_ == ZmodemTransfer::Direction::Download
+                                   ? tr("正在下载") : tr("正在上传");
+    const QString label = tr("%1 %2（%3/%4）")
+                                  .arg(action, zmodemProgressFileName_)
+                                  .arg(zmodemProgressFileNumber_)
+                                  .arg(zmodemProgressFileCount_);
+    zmodemProgress_->setWindowTitle(tr("ZMODEM 文件传输"));
+    zmodemProgress_->setCancelButtonText(tr("取消"));
+    zmodemProgress_->setLabelText(tr("%1\n传输速率：%2\n预计剩余时间：%3")
+                                        .arg(label, zmodemProgressRate_, zmodemProgressRemaining_));
+}
+
 void BaseTerminal::closeZmodemProgress() {
     if (zmodemProgress_ == nullptr) {
         return;
@@ -789,7 +789,6 @@ void BaseTerminal::closeZmodemProgress() {
     zmodemProgress_->close();
     zmodemProgress_->deleteLater();
     zmodemProgress_ = nullptr;
-    zmodemProgressLabel_.clear();
     zmodemRateTimer_.invalidate();
     zmodemRateTransferred_ = 0;
 }
@@ -1459,5 +1458,13 @@ void BaseTerminal::writeToLog(const QString &line, const QString &timestamp) {
     if (++writeCount >= 10) {// 每10次写入刷新一次
         logFile_->flush();
         writeCount = 0;
+    }
+}
+
+void BaseTerminal::changeEvent(QEvent *event) {
+    QTermWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        reTranslateUi();
+        retranslateZmodemProgress();
     }
 }

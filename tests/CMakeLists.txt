@@ -160,3 +160,32 @@ add_test(NAME command_history_test COMMAND command_history_test)
 set_tests_properties(command_history_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 45)
+
+# Exercise the actual application UI, including language changes with a live tab.
+get_target_property(QSHELL_APP_SOURCES qshell SOURCES)
+get_target_property(QSHELL_APP_SOURCE_DIR qshell SOURCE_DIR)
+set(QSHELL_I18N_TEST_SOURCES)
+foreach(source IN LISTS QSHELL_APP_SOURCES)
+    if (NOT source STREQUAL "main.cpp" AND source MATCHES "\\.(cpp|h|qrc)$")
+        get_filename_component(source "${source}" ABSOLUTE BASE_DIR "${QSHELL_APP_SOURCE_DIR}")
+        list(APPEND QSHELL_I18N_TEST_SOURCES "${source}")
+    endif ()
+endforeach()
+list(REMOVE_DUPLICATES QSHELL_I18N_TEST_SOURCES)
+add_executable(i18n_ui_test i18n_ui_test.cpp ${QSHELL_I18N_TEST_SOURCES})
+get_target_property(QSHELL_APP_LIBRARIES qshell LINK_LIBRARIES)
+target_link_libraries(i18n_ui_test ${QSHELL_APP_LIBRARIES})
+target_compile_definitions(i18n_ui_test PRIVATE
+        APP_VERSION="${APP_VERSION}"
+        QSHELL_TRANSLATION_DIR="${CMAKE_SOURCE_DIR}/src/resources/i18n")
+add_test(NAME i18n_ui_test COMMAND i18n_ui_test)
+set_tests_properties(i18n_ui_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if (Python3_Interpreter_FOUND)
+    add_test(NAME i18n_catalog_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/i18n_catalog_test.py
+            $<TARGET_FILE:Qt6::lupdate>)
+endif ()

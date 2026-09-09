@@ -27,6 +27,8 @@ public slots:
 protected:
     bool eventFilter(QObject *obj, QEvent *e) override;
 
+    void changeEvent(QEvent *event) override;
+
 private:
     void addToHistory(const QString &command);
     void navigateHistory(int direction);

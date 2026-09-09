@@ -94,6 +94,8 @@ private slots:
     void syncMcpServer();
 
 private:
+    void changeEvent(QEvent *event) override;
+    void retranslateUi();
     void initLuaEngine();
     void initIcons();
     void initActions();
@@ -145,6 +147,7 @@ private:
     QMenu *viewMenu_ = nullptr;
     QMenu *scriptMenu_ = nullptr;
     QMenu *helpMenu_ = nullptr;
+    QMenu *languageMenu_ = nullptr;
 
     QToolBar *toolBar_ = nullptr;
     QIcon *settingsIcon_ = nullptr;

@@ -1,4 +1,5 @@
 #include "CommandButtonBar.h"
+#include <QEvent>
 #include "core/ConfigManager.h"
 
 #include <QComboBox>
@@ -506,4 +507,13 @@ void CommandButtonBar::onButtonContextMenu(const QPoint &pos) {
     });
 
     menu.exec(btn->mapToGlobal(pos));
+}
+
+void CommandButtonBar::changeEvent(QEvent *event) {
+    QToolBar::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        if (groupComboBox_->count() == 1 && groupComboBox_->itemData(0).toString().isEmpty()) {
+            groupComboBox_->setItemText(0, tr("(无分组)"));
+        }
+    }
 }

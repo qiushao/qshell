@@ -1,5 +1,6 @@
 // CollapsibleDockWidget.cpp
 #include "CollapsibleDockWidget.h"
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QStyle>
 #include <QTimer>
@@ -77,5 +78,12 @@ void CollapsibleDockWidget::toggleCollapse()
             setMinimumWidth(MIN_WIDTH);
             setMaximumWidth(MAX_WIDTH);
         });
+    }
+}
+
+void CollapsibleDockWidget::changeEvent(QEvent *event) {
+    QDockWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        toggleButton_->setToolTip(tr("Collapse/Expand"));
     }
 }

@@ -35,6 +35,9 @@ private slots:
 
     void onCustomContextMenu(const QPoint &pos);
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
     void setupUI();
 

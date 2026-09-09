@@ -16,6 +16,9 @@ public:
 private slots:
     void toggleCollapse();
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
     QPushButton *toggleButton_;
     QWidget *contentWidget_;

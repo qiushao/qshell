@@ -64,18 +64,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     dialog.setSessionData(session);
-    QComboBox *modeCombo = nullptr;
-    for (auto *combo : dialog.findChildren<QComboBox *>()) {
-        if (combo->findText(QStringLiteral("bin")) >= 0) {
-            modeCombo = combo;
-        }
-    }
-    if (!check(modeCombo != nullptr && modeCombo->currentText() == QStringLiteral("bin") &&
+    auto *modeCombo = dialog.findChild<QComboBox *>("serialDataMode");
+    if (!check(modeCombo != nullptr && modeCombo->currentData().toInt() == static_cast<int>(SerialDataMode::Bin) &&
                        dialog.sessionData().serialConfig.dataMode == SerialDataMode::Bin,
                "session editor must restore bin mode")) {
         return 1;
     }
-    modeCombo->setCurrentIndex(modeCombo->findText(QStringLiteral("text")));
+    modeCombo->setCurrentIndex(modeCombo->findData(static_cast<int>(SerialDataMode::Text)));
     if (!check(dialog.sessionData().serialConfig.dataMode == SerialDataMode::Text,
                "session editor must save the selected mode")) {
         return 1;

@@ -1,6 +1,37 @@
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
+set(QSHELL_TS_FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/qshell_en.ts
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/qshell_zh_CN.ts
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/qshell_zh_TW.ts)
+qt_add_translation(QSHELL_QM_FILES ${QSHELL_TS_FILES})
+add_library(qshell_i18n STATIC core/LanguageManager.cpp core/LanguageManager.h)
+target_include_directories(qshell_i18n PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(qshell_i18n PUBLIC Qt::Core)
+qt_add_resources(qshell_i18n qshell_translations
+        OUTPUT_TARGETS QSHELL_TRANSLATION_RESOURCE_TARGETS
+        PREFIX "/i18n" BASE "${CMAKE_CURRENT_BINARY_DIR}"
+        FILES ${QSHELL_QM_FILES})
+
+# Bundle Qt's standard dialog/button translations so installed applications work
+# without relying on translation files on the user's machine.
+get_target_property(QSHELL_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+execute_process(COMMAND "${QSHELL_QMAKE_EXECUTABLE}" -query QT_INSTALL_TRANSLATIONS
+        OUTPUT_VARIABLE QSHELL_QT_TRANSLATIONS_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+qt_add_resources(qshell_i18n qshell_qt_translations
+        OUTPUT_TARGETS QSHELL_QT_TRANSLATION_RESOURCE_TARGETS
+        PREFIX "/i18n" BASE "${QSHELL_QT_TRANSLATIONS_DIR}"
+        FILES "${QSHELL_QT_TRANSLATIONS_DIR}/qtbase_en.qm"
+              "${QSHELL_QT_TRANSLATIONS_DIR}/qtbase_zh_CN.qm"
+              "${QSHELL_QT_TRANSLATIONS_DIR}/qtbase_zh_TW.qm")
+
+# RCC-generated identifiers follow Qt's naming rules, not the project's rules.
+set_target_properties(${QSHELL_TRANSLATION_RESOURCE_TARGETS}
+        ${QSHELL_QT_TRANSLATION_RESOURCE_TARGETS}
+        PROPERTIES CXX_CLANG_TIDY "")
+
 set(SRC_FILES main.cpp
         resources/resources.qrc
         ui/MainWindow.cpp
@@ -75,6 +106,7 @@ else ()
 endif ()
 
 target_link_libraries(qshell
+        qshell_i18n
         Qt::Core
         Qt::Gui
         Qt::Widgets

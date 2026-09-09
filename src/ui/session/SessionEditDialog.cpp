@@ -212,8 +212,9 @@ QWidget* SessionEditDialog::createSerialSection() {
     layout->addRow(tr("Flow Control:"), flowControlCombo_);
 
     serialDataModeCombo_ = new QComboBox(groupBox);
-    serialDataModeCombo_->addItem("text", static_cast<int>(SerialDataMode::Text));
-    serialDataModeCombo_->addItem("bin", static_cast<int>(SerialDataMode::Bin));
+    serialDataModeCombo_->setObjectName("serialDataMode");
+    serialDataModeCombo_->addItem(tr("Text"), static_cast<int>(SerialDataMode::Text));
+    serialDataModeCombo_->addItem(tr("Hexadecimal (bin)"), static_cast<int>(SerialDataMode::Bin));
     serialDataModeCombo_->setToolTip(tr("bin: display and enter hexadecimal bytes, e.g. 41 00 FF."));
     layout->addRow(tr("Data Mode:"), serialDataModeCombo_);
 
