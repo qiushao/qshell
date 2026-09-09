@@ -374,6 +374,20 @@ void shellTest(const QString &directory) {
     terminal.sendText("\x7f"
                       "a\r");
     waitFor([&]() { return history.commands().contains("printf beta") && received.endsWith("test$ "); }, "shell edit was not reflected in recorded history");
+    key(display, Qt::Key_Up);
+    waitFor([&]() { return screenText().trimmed().endsWith("test$ printf beta"); }, "Up did not recall the latest bash command");
+    require(!popup->isVisible(), "bash history recall opened the completion popup");
+    key(display, Qt::Key_Up);
+    waitFor([&]() { return screenText().trimmed().endsWith("test$ printf alpha"); }, "repeated Up did not reach bash history");
+    require(!popup->isVisible(), "repeated bash history recall opened the completion popup");
+    key(display, Qt::Key_Down);
+    waitFor([&]() { return screenText().trimmed().endsWith("test$ printf beta"); }, "Down did not reach bash history");
+    require(!popup->isVisible(), "Down in bash history opened the completion popup");
+    key(display, Qt::Key_Backspace, "\x7f");
+    waitFor([&]() { return screenText().trimmed().endsWith("test$ printf bet") && popup->isVisible(); }, "editing recalled input did not restore completion");
+    received.clear();
+    terminal.sendText("\x03");
+    waitFor([&]() { return received.endsWith("test$ "); }, "shell did not return to prompt after history navigation");
     QFile completionFile(directory + "/qshell-tab-target.txt");
     require(completionFile.open(QIODevice::WriteOnly), "could not create shell completion fixture");
     completionFile.close();

@@ -57,6 +57,7 @@ void TerminalCommandCompletion::reset() {
     prefix_.clear();
     submitted_ = false;
     accepting_ = false;
+    browsingHistory_ = false;
     completion_->hide();
 }
 
@@ -122,7 +123,7 @@ void TerminalCommandCompletion::afterOutput() {
         }
         return;
     }
-    if (!accepting_) {
+    if (!accepting_ && !browsingHistory_) {
         const QRect cursor(display_->getCursorX() * display_->fontWidth() + display_->margin(),
                            display_->getCursorY() * display_->fontHeight() + display_->margin(),
                            display_->fontWidth(), display_->fontHeight());
@@ -133,7 +134,16 @@ void TerminalCommandCompletion::afterOutput() {
 bool TerminalCommandCompletion::eventFilter(QObject *watched, QEvent *event) {
     if (watched == display_) {
         if (event->type() == QEvent::KeyPress) {
-            if (completion_->handleKey(dynamic_cast<QKeyEvent *>(event))) return true;
+            auto *key = dynamic_cast<QKeyEvent *>(event);
+            if (completion_->handleKey(key)) return true;
+            // Keep shell history navigation in the shell until the user edits the input.
+            if (key->key() == Qt::Key_Up || key->key() == Qt::Key_Down) {
+                browsingHistory_ = true;
+                completion_->hide();
+            } else if (key->key() == Qt::Key_Backspace || key->key() == Qt::Key_Delete ||
+                       (!key->text().isEmpty() && key->text().front().isPrint())) {
+                browsingHistory_ = false;
+            }
             accepting_ = false;
         } else if (event->type() == QEvent::Resize || event->type() == QEvent::Hide) {
             reset();

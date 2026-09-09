@@ -33,6 +33,7 @@ private:
     QString prefix_;
     bool submitted_ = false;
     bool accepting_ = false;
+    bool browsingHistory_ = false;
 };
 
 #endif
