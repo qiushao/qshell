@@ -4,6 +4,11 @@
 
 int main() {
     const GlobalSettings defaults;
+    if (!defaults.commandHistoryCompletion ||
+        !GlobalSettings::fromJson(QJsonObject()).commandHistoryCompletion) {
+        qCritical() << "command history completion must be enabled for new and legacy settings";
+        return 1;
+    }
     if (defaults.autoSaveLog) {
         qCritical() << "automatic log saving must be disabled by default";
         return 1;
@@ -17,10 +22,11 @@ int main() {
     configured.autoSaveLog = true;
     configured.autoSaveLogDirectory = QStringLiteral("/tmp/qshell-logs");
     configured.terminalTimestamp = true;
+    configured.commandHistoryCompletion = false;
 
     const GlobalSettings restored =
             GlobalSettings::fromJson(configured.toJson());
-    if (!restored.autoSaveLog || !restored.terminalTimestamp ||
+    if (!restored.autoSaveLog || !restored.terminalTimestamp || restored.commandHistoryCompletion ||
         restored.autoSaveLogDirectory != configured.autoSaveLogDirectory) {
         qCritical() << "global settings did not survive JSON round trip";
         return 1;

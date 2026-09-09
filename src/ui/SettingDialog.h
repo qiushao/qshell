@@ -32,6 +32,7 @@ private:
     QLineEdit *fontSizeEdit_ = nullptr;
     QComboBox *colorSchemeEdit_ = nullptr;
     QCheckBox *copyOnSelectCheckBox_ = nullptr;
+    QCheckBox *commandHistoryCompletionCheckBox_ = nullptr;
     QCheckBox *debugCheckBox_ = nullptr;
     QCheckBox *terminalTimestampCheckBox_ = nullptr;
     QCheckBox *autoSaveLogCheckBox_ = nullptr;

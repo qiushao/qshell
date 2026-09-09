@@ -285,6 +285,7 @@ struct GlobalSettings {
     int fontSize = 14;
     QString colorScheme = "Tango";
     bool copyOnSelect = false;
+    bool commandHistoryCompletion = true;
     bool debug = true;
     bool terminalTimestamp = false;
     bool autoSaveLog = false;
@@ -299,6 +300,7 @@ struct GlobalSettings {
         obj["fontSize"] = fontSize;
         obj["colorScheme"] = colorScheme;
         obj["copyOnSelect"] = copyOnSelect;
+        obj["commandHistoryCompletion"] = commandHistoryCompletion;
         obj["debug"] = debug;
         obj["terminalTimestamp"] = terminalTimestamp;
         obj["autoSaveLog"] = autoSaveLog;
@@ -315,6 +317,7 @@ struct GlobalSettings {
         settings.fontSize = obj["fontSize"].toInt(12);
         settings.colorScheme = obj["colorScheme"].toString("Tango");
         settings.copyOnSelect = obj["copyOnSelect"].toBool();
+        settings.commandHistoryCompletion = obj["commandHistoryCompletion"].toBool(true);
         settings.debug = obj["debug"].toBool();
         settings.terminalTimestamp = obj["terminalTimestamp"].toBool(false);
         settings.autoSaveLog = obj["autoSaveLog"].toBool(false);

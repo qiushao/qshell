@@ -1,5 +1,6 @@
 #include "TerminalDisplay.h"
 #include "core/CommandHistory.h"
+#include "core/ConfigManager.h"
 #include "ui/command/CommandHistoryDialog.h"
 #include "ptyqt.h"
 #include "qtermwidget.h"
@@ -104,6 +105,18 @@ void editorTest() {
     editor->setPlainText("git st");
     QApplication::processEvents();
     require(popup->isVisible() && popup->count() == 2, "editor prefix popup did not appear");
+    auto *config = ConfigManager::instance();
+    auto settings = config->globalSettings();
+    settings.commandHistoryCompletion = false;
+    config->setGlobalSettings(settings);
+    require(!popup->isVisible(), "disabling completion did not hide the editor popup immediately");
+    require(config->load() && !config->globalSettings().commandHistoryCompletion, "disabled completion setting did not survive reload");
+    editor->setPlainText("git s");
+    require(!popup->isVisible(), "editor showed suggestions while completion was disabled");
+    settings.commandHistoryCompletion = true;
+    config->setGlobalSettings(settings);
+    editor->setPlainText("git st");
+    require(popup->isVisible(), "re-enabling completion did not restore editor suggestions");
     const QString screenshot = qEnvironmentVariable("QSHELL_TEST_SCREENSHOT");
     if (!screenshot.isEmpty()) {
         const QRect windowRect(window.mapToGlobal(QPoint()), window.size());
@@ -303,6 +316,24 @@ void terminalTest() {
     completion.beforeSend("clear\r");
     output("clear\r\n\x1b[2J\x1b[H");
     require(history.commands().last() == "clear", "screen-clearing command was lost before history capture");
+    completion.beforeSend("ech");
+    output("ech");
+    require(popup->isVisible(), "terminal suggestions missing before disabling completion");
+    auto *config = ConfigManager::instance();
+    auto settings = config->globalSettings();
+    settings.commandHistoryCompletion = false;
+    config->setGlobalSettings(settings);
+    require(!popup->isVisible(), "disabling completion did not hide the terminal popup immediately");
+    output("o disabled");
+    require(!popup->isVisible(), "terminal showed suggestions while completion was disabled");
+    completion.beforeSend("\r");
+    output("\r\nuser$ ");
+    require(history.commands().last() == "echo disabled", "disabling suggestions stopped terminal history recording");
+    settings.commandHistoryCompletion = true;
+    config->setGlobalSettings(settings);
+    completion.beforeSend("ech");
+    output("ech");
+    require(popup->isVisible(), "re-enabling completion did not restore terminal suggestions");
     terminal.hide();
 }
 

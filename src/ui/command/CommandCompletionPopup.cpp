@@ -1,6 +1,7 @@
 #include "CommandCompletionPopup.h"
 
 #include "core/CommandHistory.h"
+#include "core/ConfigManager.h"
 #include <QApplication>
 #include <QKeyEvent>
 #include <QListWidget>
@@ -21,10 +22,17 @@ CommandCompletionPopup::CommandCompletionPopup(QWidget *editor)
     connect(&CommandHistory::instance(), &CommandHistory::changed, this, [this]() {
         if (list_->isVisible()) updateMatches(query_, cursorRect_);
     });
+    connect(ConfigManager::instance(), &ConfigManager::globalSettingsChanged, this, [this]() {
+        if (!ConfigManager::instance()->globalSettings().commandHistoryCompletion) hide();
+    });
     qApp->installEventFilter(this);
 }
 
 void CommandCompletionPopup::updateMatches(const QString &query, const QRect &cursorRect) {
+    if (!ConfigManager::instance()->globalSettings().commandHistoryCompletion) {
+        hide();
+        return;
+    }
     query_ = query;
     cursorRect_ = cursorRect;
     const QStringList matches = CommandHistory::instance().matches(query);

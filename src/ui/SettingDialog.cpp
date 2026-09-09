@@ -18,6 +18,7 @@ SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     fontSizeEdit_->setText(QString::number(settings.fontSize));
     colorSchemeEdit_->setCurrentText(settings.colorScheme);
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
+    commandHistoryCompletionCheckBox_->setChecked(settings.commandHistoryCompletion);
     debugCheckBox_->setChecked(settings.debug);
     terminalTimestampCheckBox_->setChecked(settings.terminalTimestamp);
     autoSaveLogDirectoryEdit_->setText(settings.autoSaveLogDirectory);
@@ -48,6 +49,10 @@ void SettingDialog::initWidgets() {
     copyOnSelectCheckBox_ = new QCheckBox(this);
     copyOnSelectCheckBox_->setToolTip(tr("Automatically copy selected text to clipboard"));
     formLayout_->addRow(tr("Copy on Select:"), copyOnSelectCheckBox_);
+
+    commandHistoryCompletionCheckBox_ = new QCheckBox(this);
+    commandHistoryCompletionCheckBox_->setToolTip(tr("Show command history suggestions in terminals and the command input box"));
+    formLayout_->addRow(tr("Command History Completion:"), commandHistoryCompletionCheckBox_);
 
     debugCheckBox_ = new QCheckBox(this);
     debugCheckBox_->setToolTip(tr("Enable debug log console"));
@@ -150,6 +155,7 @@ void SettingDialog::onOK() {
     settings.fontSize = fontSizeEdit_->text().toInt();
     settings.colorScheme = colorSchemeEdit_->currentText();
     settings.copyOnSelect = copyOnSelectCheckBox_->isChecked();
+    settings.commandHistoryCompletion = commandHistoryCompletionCheckBox_->isChecked();
     settings.debug = debugCheckBox_->isChecked();
     settings.terminalTimestamp = terminalTimestampCheckBox_->isChecked();
     settings.autoSaveLog = autoSaveLogCheckBox_->isChecked();

@@ -141,6 +141,8 @@ set_tests_properties(serial_terminal_test PROPERTIES
 
 add_executable(command_history_test
         command_history_test.cpp
+        ../src/core/ConfigManager.cpp
+        ../src/core/CryptoHelper.cpp
         ../src/core/CommandHistory.cpp
         ../src/ui/command/CommandCompletionPopup.cpp
         ../src/ui/command/CommandWindow.cpp
