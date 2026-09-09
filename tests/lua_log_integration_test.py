@@ -21,6 +21,11 @@ local function read(path)
     local file = assert(io.open(path, "rb"))
     local text = file:read("*a")
     file:close()
+    local timestamp = "^%[%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d:%d%d%d%] "
+    for line in text:gmatch("[^\\n]+") do
+        assert(line == "existing" or line:match(timestamp), line)
+    end
+    text = text:gsub("%[%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d:%d%d%d%] ", "")
     return text
 end
 assert(read(arg[1]) == "existing\\nFILE_AND_CONSOLE\\n中文日志\\n")

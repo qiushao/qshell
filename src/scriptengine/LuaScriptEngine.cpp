@@ -8,6 +8,7 @@
 #include "ui/terminal/BaseTerminal.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -258,7 +259,8 @@ void LuaScriptEngine::registerAppModule(sol::table& qshell) {
     qshell.set_function("log", [this](const std::string& msg) {
         qDebug() << QString::fromStdString(msg);
         if (logFile_) {
-            const QByteArray line = QByteArray::fromStdString(msg) + '\n';
+            const QByteArray line = QDateTime::currentDateTime().toString("[yyyy-MM-dd hh:mm:ss:zzz] ").toUtf8()
+                                    + QByteArray::fromStdString(msg) + '\n';
             if (logFile_->write(line) != line.size() || !logFile_->flush()) {
                 throw std::runtime_error("log: " + logFile_->fileName().toStdString()
                                          + ": " + logFile_->errorString().toStdString());

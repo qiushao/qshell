@@ -1,11 +1,12 @@
-
-ret = qshell.session.open("ir")
-if (ret == false) then
-    qshell.showMessage("open session ir failed")
-    return
-end
+qshell.setLogFile("/home/qiushao/qshell.log", false)
+qshell.log("start ir test")
+local ir = qshell.serial.open("/dev/ttyUSB0", {baudRate = 9600})
 
 for i = 1, 10 do
-    qshell.screen.sendBinary(0xC0)
-    qshell.sleep(10)
+    qshell.log("ir test " .. i)
+    ir:writeBinary(0xC0) -- 发送 power 红外码
+    qshell.sleep(40)
 end
+
+ir:close()
+qshell.log("finish ir test")
