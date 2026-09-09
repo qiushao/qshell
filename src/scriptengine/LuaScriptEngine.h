@@ -1,6 +1,7 @@
 // LuaScriptEngine.h
 #pragma once
 #include "LuaSerialModule.h"
+#include <QFile>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -12,6 +13,7 @@
 #include <chrono>
 #include <vector>
 #include <mutex>
+#include <memory>
 
 class MainWindow;
 
@@ -51,6 +53,7 @@ private:
 
     sol::state lua_;
     LuaSerialModule serialModule_;
+    std::unique_ptr<QFile> logFile_;
     MainWindow *mainWindow_ = nullptr;
     std::atomic<bool> running_{false};
     bool isWaitForString_ = false;

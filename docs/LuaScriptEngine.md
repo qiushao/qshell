@@ -47,11 +47,35 @@ end
 ---
 
 #### `qshell.log(msg)`
-输出调试日志（输出到 Qt 调试控制台）。
+输出调试日志到 Qt 调试控制台。调用 `qshell.setLogFile(path)` 后，同时将原始消息以 UTF-8
+追加到文件，每次调用在末尾添加换行并刷新文件。写入失败会抛出 Lua 错误，可用 `pcall` 捕获。
 
 example:
 ```lua
 qshell.log("脚本开始执行...")
+```
+
+---
+
+#### `qshell.setLogFile(path, [append])`
+设置当前脚本的日志文件，后续 `qshell.log(msg)` 同时输出到该文件和 Qt 调试控制台。
+
+- `path` 为文件路径；相对路径基于应用进程的当前工作目录。
+- `append` 为可选布尔值，默认 `true`，追加日志；传 `false` 时在调用本接口时清空已有文件，后续日志依次写入。
+- 文件不存在时创建；父目录必须已存在。
+- 传入空字符串 `""` 关闭文件日志；切换路径会关闭之前的文件。
+- 正常结束、出错或停止脚本后自动关闭文件，下次运行需重新设置。
+- 成功无返回值；打开失败会抛出 Lua 错误，保留之前的日志文件设置。
+- 仅记录 `qshell.log` 消息，不包含 Lua `print` 或应用的其他调试输出。
+
+example:
+```lua
+qshell.setLogFile("script.log")        -- 默认追加
+qshell.setLogFile("script.log", true)  -- 显式追加
+qshell.setLogFile("script.log", false) -- 清空已有日志，重新记录
+qshell.log("脚本开始执行...")
+qshell.log("操作完成")
+qshell.setLogFile("")
 ```
 
 ---

@@ -243,8 +243,27 @@ void LuaScriptEngine::registerAppModule(sol::table& qshell) {
         return result.toStdString();
     });
 
-    qshell.set_function("log", [](const std::string& msg) {
+    qshell.set_function("setLogFile", [this](const std::string& path, sol::optional<bool> append) {
+        if (path.empty()) {
+            logFile_.reset();
+            return;
+        }
+        auto file = std::make_unique<QFile>(QString::fromStdString(path));
+        if (!file->open(QIODevice::WriteOnly | (append.value_or(true) ? QIODevice::Append : QIODevice::Truncate))) {
+            throw std::runtime_error("setLogFile: " + path + ": " + file->errorString().toStdString());
+        }
+        logFile_ = std::move(file);
+    });
+
+    qshell.set_function("log", [this](const std::string& msg) {
         qDebug() << QString::fromStdString(msg);
+        if (logFile_) {
+            const QByteArray line = QByteArray::fromStdString(msg) + '\n';
+            if (logFile_->write(line) != line.size() || !logFile_->flush()) {
+                throw std::runtime_error("log: " + logFile_->fileName().toStdString()
+                                         + ": " + logFile_->errorString().toStdString());
+            }
+        }
     });
 
     // 修改 sleep 使用可中断版本并处理定时器
@@ -834,11 +853,13 @@ bool LuaScriptEngine::executeScript(const QString& scriptPath, const QStringList
     
     try {
         auto result = lua_.script_file(scriptPath.toStdString());
+        logFile_.reset();
         serialModule_.closeAll();
         running_ = false;
         emit scriptFinished();
         return result.valid();
     } catch (const sol::error& e) {
+        logFile_.reset();
         serialModule_.closeAll();
         running_ = false;
         emit scriptError(QString::fromStdString(e.what()));
@@ -860,11 +881,13 @@ bool LuaScriptEngine::executeCode(const QString& code)
     
     try {
         auto result = lua_.script(code.toStdString());
+        logFile_.reset();
         serialModule_.closeAll();
         running_ = false;
         emit scriptFinished();
         return result.valid();
     } catch (const sol::error& e) {
+        logFile_.reset();
         serialModule_.closeAll();
         running_ = false;
         emit scriptError(QString::fromStdString(e.what()));
