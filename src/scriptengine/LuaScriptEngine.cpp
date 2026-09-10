@@ -4,6 +4,7 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include "ui/MainWindow.h"
 #include "ui/terminal/BaseTerminal.h"
 
@@ -366,52 +367,21 @@ void LuaScriptEngine::registerScreenModule(sol::table& qshell)
             Qt::BlockingQueuedConnection);
     });
 
-    // 修改 waitForString 以支持定时器
     screen.set_function("waitForString", [this](const std::string& str, int timeoutSeconds) -> bool {
-        isWaitForString_ = true;
-        waitForString_ = QString::fromStdString(str);
-        findWaitForString_ = false;
-        auto currentSession = mainWindow_->getCurrentSession();
-        QObject::connect(currentSession, &QTermWidget::onNewLine, this, &LuaScriptEngine::onDisplayOutput);
-        
-        auto endTime = std::chrono::steady_clock::now()
-                          + std::chrono::milliseconds(timeoutSeconds * 1000);
+        return waitForStrings({QString::fromStdString(str)}, timeoutSeconds);
+    });
 
-        int pollCounter = 0;
-        constexpr int pollInterval = 4;  // 每4次循环检查一次屏幕内容（约200ms）
-        while (std::chrono::steady_clock::now() < endTime) {
-            if (gShouldStop.load()) {
-                QObject::disconnect(currentSession, &QTermWidget::onNewLine, this, &LuaScriptEngine::onDisplayOutput);
-                throw std::runtime_error("interrupted during waitForString");
+    screen.set_function("waitForStrings", [this](const sol::table& strings, int timeoutSeconds) -> bool {
+        QStringList targets;
+        const qsizetype size = std::distance(strings.begin(), strings.end());
+        for (qsizetype i = 0; i < size; ++i) {
+            const auto value = strings.raw_get<sol::object>(i + 1);
+            if (value.get_type() != sol::type::string) {
+                throw std::runtime_error("waitForStrings: expected an array of strings");
             }
-
-            // 处理定时器
-            processTimers();
-
-            if (findWaitForString_) {
-                isWaitForString_ = false;
-                QObject::disconnect(currentSession, &QTermWidget::onNewLine, this, &LuaScriptEngine::onDisplayOutput);
-                return true;
-            }
-
-            // 定期轮询屏幕内容（检查最后一行）
-            if (++pollCounter >= pollInterval) {
-                pollCounter = 0;
-                auto lastLine = mainWindow_->getLastLine();
-                if (lastLine.contains(waitForString_)) {
-                    findWaitForString_ = true;
-                    isWaitForString_ = false;
-                    QObject::disconnect(currentSession, &QTermWidget::onNewLine, this, &LuaScriptEngine::onDisplayOutput);
-                    return true;
-                }
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            targets.append(QString::fromStdString(value.as<std::string>()));
         }
-
-        isWaitForString_ = false;
-        QObject::disconnect(currentSession, &QTermWidget::onNewLine, this, &LuaScriptEngine::onDisplayOutput);
-        return false;
+        return waitForStrings(targets, timeoutSeconds);
     });
 
     // 修改 waitForRegexp 以支持定时器
@@ -482,6 +452,58 @@ void LuaScriptEngine::registerScreenModule(sol::table& qshell)
     screen.set_function("getLastMatch", [this]() -> std::string {
         return lastRegexpMatch_.toStdString();
     });
+}
+
+bool LuaScriptEngine::waitForStrings(const QStringList& strings, int timeoutSeconds) {
+    if (strings.isEmpty() || timeoutSeconds <= 0) {
+        return false;
+    }
+
+    // 输出信号在 UI 线程触发，等待循环在脚本线程运行。
+    auto found = std::make_shared<std::atomic<bool>>(false);
+    auto match = [strings, found](const QString& line) {
+        if (std::any_of(strings.cbegin(), strings.cend(), [&line](const QString& str) {
+                return line.contains(str);
+            })) {
+            found->store(true);
+        }
+    };
+    QMetaObject::Connection connection;
+    QMetaObject::invokeMethod(mainWindow_, [this, &connection, match]() {
+        auto currentSession = mainWindow_->getCurrentSession();
+        if (currentSession) {
+            connection = QObject::connect(currentSession, &QTermWidget::onNewLine, mainWindow_, match);
+        }
+    }, Qt::BlockingQueuedConnection);
+    const auto cleanup = qScopeGuard([connection]() { QObject::disconnect(connection); });
+
+    auto endTime = std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSeconds);
+    int pollCounter = 0;
+    constexpr int pollInterval = 4;  // 每4次循环检查一次屏幕内容（约200ms）
+    while (std::chrono::steady_clock::now() < endTime) {
+        if (gShouldStop.load()) {
+            throw std::runtime_error("interrupted during waitForStrings");
+        }
+
+        processTimers();
+        if (found->load()) {
+            return true;
+        }
+
+        if (++pollCounter >= pollInterval) {
+            pollCounter = 0;
+            QString lastLine;
+            QMetaObject::invokeMethod(mainWindow_, "getLastLine",
+                                      Qt::BlockingQueuedConnection,
+                                      Q_RETURN_ARG(QString, lastLine));
+            match(lastLine);
+            if (found->load()) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    return false;
 }
 
 void LuaScriptEngine::registerSessionModule(sol::table &qshell) {
@@ -908,12 +930,6 @@ void LuaScriptEngine::stopScript()
 }
 
 void LuaScriptEngine::onDisplayOutput(const QString &line) {
-    if (isWaitForString_) {
-        if (line.contains(waitForString_)) {
-            findWaitForString_ = true;
-        }
-    }
-
     if (isWaitForRegexp_) {
         QRegularExpressionMatch match = waitForRegexp_.match(line);
         if (match.hasMatch()) {

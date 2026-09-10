@@ -40,6 +40,7 @@ private:
     void registerTimerModule(sol::table &qshell);
     void registerHttpModule(sol::table &qshell);
     void onDisplayOutput(const QString &line);
+    bool waitForStrings(const QStringList& strings, int timeoutSeconds);
 
     // 定时器处理
     void processTimers();
@@ -56,9 +57,6 @@ private:
     std::unique_ptr<QFile> logFile_;
     MainWindow *mainWindow_ = nullptr;
     std::atomic<bool> running_{false};
-    bool isWaitForString_ = false;
-    bool findWaitForString_ = false;
-    QString waitForString_;
 
     // waitForRegexp 相关变量
     bool isWaitForRegexp_ = false;

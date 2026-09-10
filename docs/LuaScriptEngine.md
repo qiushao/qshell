@@ -227,6 +227,28 @@ end
 
 ---
 
+#### `qshell.screen.waitForStrings(strings, timeoutSeconds)`
+同时等待多个候选字符串，匹配任意一个即返回。与 `waitForString` 一样，检查等待期间的新输出行，并定期检查屏幕最后一行（支持尚未换行的提示符）。使用区分大小写的子串匹配，不是正则表达式。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `strings` | table | 从索引 1 开始的连续字符串数组，例如 `{"login:", "password:"}` |
+| `timeoutSeconds` | number | 整组候选字符串共用的超时时间（秒） |
+
+**返回值**: `boolean` - `true` 表示找到任意一个，`false` 表示超时。空数组或非正超时时间立即返回 `false`；数组包含非字符串或索引不连续时抛出错误。等待期间继续处理定时器，并支持停止脚本。
+
+example:
+```lua
+qshell.screen.sendText("reboot\r")
+if qshell.screen.waitForStrings({"console:/ $", "console:/ #"}, 30) then
+    qshell.log("设备已进入 shell")
+else
+    qshell.log("等待超时")
+end
+```
+
+---
+
 #### `qshell.screen.waitForRegexp(pattern, timeoutSeconds)`
 等待屏幕上出现匹配正则表达式的内容。
 

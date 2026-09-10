@@ -19,6 +19,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/lua_log_integration_test.py
                 $<TARGET_FILE:qshell>)
         set_tests_properties(lua_log_integration_test PROPERTIES TIMEOUT 30)
+        add_test(NAME lua_screen_wait_integration_test
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/lua_screen_wait_integration_test.py
+                $<TARGET_FILE:qshell>)
+        set_tests_properties(lua_screen_wait_integration_test PROPERTIES TIMEOUT 30)
     endif ()
 endif ()
 
