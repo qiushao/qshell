@@ -1,6 +1,6 @@
 local ir = require("common/ir")
 
-qshell.setLogFile("/home/qiushao/qshell.log", false)
+qshell.setLogFile("qshell.log", false)
 local remote = ir.new("/dev/ttyUSB2", {baudRate = 9600})
 local sourceCount = 6
 

@@ -3,7 +3,7 @@ package.loaded["common/tv"] = nil
 local ir = require("common/ir")
 local tv = require("common/tv")
 
-qshell.setLogFile("/home/qiushao/qshell.log", false)
+qshell.setLogFile("qshell.log", false)
 local remote = ir.new("/dev/ttyUSB2", {baudRate = 9600})
 
 -- 创建日志保存目录

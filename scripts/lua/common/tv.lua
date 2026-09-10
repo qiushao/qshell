@@ -19,7 +19,7 @@ end
 
 function tv.waitStart(timeout)
     qshell.screen.sendText("\r\r")
-    return qshell.screen.waitForStrings({"console:/ $", "shell@KKAML963"}, timeout)
+    return qshell.screen.waitForStrings({"console:/", "shell@"}, timeout)
 end
 
 return tv

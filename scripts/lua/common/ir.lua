@@ -1,7 +1,7 @@
 local ir = {}
 ir.__index = ir -- 将 __index 指向自身，实现继承/方法查找
 ir.keycode = {
-    power = 0xC0,
+    power = 0x40,
     input = 0xC1,
     up = 0xC2,
     down = 0xC3,
@@ -39,7 +39,9 @@ end
 function ir:randomKey()
     local keys = {}
     for _, keycode in pairs(self.keycode) do
-        keys[#keys + 1] = keycode
+        if keycode ~= self.keycode.power then
+            keys[#keys + 1] = keycode
+        end
     end
     return keys[math.random(#keys)]
 end
