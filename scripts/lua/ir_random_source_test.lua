@@ -1,3 +1,5 @@
+package.loaded["common/ir"] = nil
+package.loaded["common/tv"] = nil
 local ir = require("common/ir")
 
 qshell.setLogFile("qshell.log", false)

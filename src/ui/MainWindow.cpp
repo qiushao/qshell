@@ -492,7 +492,12 @@ void MainWindow::initButtonBar() {
 
     // 连接命令触发信号
     connect(commandButtonBar_, &CommandButtonBar::commandTriggered,
-            this, &MainWindow::onCommandSend);
+            this, [this](const QString &command) {
+                onCommandSend(command);
+                if (currentTab_) {
+                    currentTab_->setFocus();
+                }
+            });
 }
 
 void MainWindow::initMcpServer() {

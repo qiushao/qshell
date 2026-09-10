@@ -187,6 +187,14 @@ set_tests_properties(i18n_ui_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
 
+add_executable(quick_button_focus_test quick_button_focus_test.cpp ${QSHELL_I18N_TEST_SOURCES})
+target_link_libraries(quick_button_focus_test ${QSHELL_APP_LIBRARIES})
+target_compile_definitions(quick_button_focus_test PRIVATE APP_VERSION="${APP_VERSION}")
+add_test(NAME quick_button_focus_test COMMAND quick_button_focus_test)
+set_tests_properties(quick_button_focus_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND)
     add_test(NAME i18n_catalog_test

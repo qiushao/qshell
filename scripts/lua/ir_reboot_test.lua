@@ -40,6 +40,8 @@ for i = 1, 10 do
     qshell.screen.sendText("dmesg -w > /data/dmesg" .. i .. ".log&\r")
     qshell.sleep(40)
 
+    -- 这里可以添加其他测试项目
+
     -- 停止抓日志
     qshell.screen.sendText("\r")
     qshell.screen.sendText("pkill logcat\r")
