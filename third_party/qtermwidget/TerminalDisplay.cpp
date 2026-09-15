@@ -3024,6 +3024,11 @@ void TerminalDisplay::setBracketedPasteMode(bool on) {
 }
 bool TerminalDisplay::bracketedPasteMode() const { return _bracketedPasteMode; }
 
+void TerminalDisplay::setApplicationCursorKeysMode(bool enabled) {
+    _applicationCursorKeysMode = enabled;
+}
+bool TerminalDisplay::applicationCursorKeysMode() const { return _applicationCursorKeysMode; }
+
 #undef KeyPress
 
 void TerminalDisplay::emitSelection(bool useXselection, bool appendReturn) {

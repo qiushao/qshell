@@ -1984,6 +1984,10 @@ void Vt102Emulation::setMode(int m) {
         emit programBracketedPasteModeChanged(true);
         break;
 
+    case MODE_AppCuKeys:
+        emit programApplicationCursorKeysModeChanged(true);
+        break;
+
     case MODE_AppScreen:
         _screen[1]->clearSelection();
         setScreen(1);
@@ -2011,6 +2015,10 @@ void Vt102Emulation::resetMode(int m) {
 
     case MODE_BracketedPaste:
         emit programBracketedPasteModeChanged(false);
+        break;
+
+    case MODE_AppCuKeys:
+        emit programApplicationCursorKeysModeChanged(false);
         break;
 
     case MODE_AppScreen:

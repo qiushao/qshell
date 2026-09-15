@@ -341,6 +341,7 @@ signals:
     void programUsesMouseChanged(bool usesMouse);
 
     void programBracketedPasteModeChanged(bool bracketedPasteMode);
+    void programApplicationCursorKeysModeChanged(bool enabled);
 
     /**
      * Emitted when the contents of the screen image change.

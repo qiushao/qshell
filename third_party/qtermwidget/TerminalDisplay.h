@@ -528,6 +528,9 @@ public slots:
     void setBracketedPasteMode(bool bracketedPasteMode);
     bool bracketedPasteMode() const;
 
+    void setApplicationCursorKeysMode(bool enabled);
+    bool applicationCursorKeysMode() const;
+
     /**
      * Shows a notification that a bell event has occurred in the terminal.
      * TODO: More documentation here
@@ -829,6 +832,7 @@ private:
     bool _mouseMarks;
     bool _isPrimaryScreen;
     bool _bracketedPasteMode;
+    bool _applicationCursorKeysMode = false;
     bool _disabledBracketedPasteMode;
     bool _showResizeNotificationEnabled;
 

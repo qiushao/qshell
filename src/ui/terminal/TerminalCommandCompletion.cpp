@@ -63,7 +63,7 @@ void TerminalCommandCompletion::reset() {
 
 QString TerminalCommandCompletion::inputText() const {
     auto *current = screen();
-    if (startRow_ < 0 || !current->hasScroll() ||
+    if (startRow_ < 0 || !current->hasScroll() || display_->applicationCursorKeysMode() ||
         startRow_ >= current->getHistLines() + current->getLines() ||
         startColumn_ >= current->getColumns() ||
         rowText(current, startRow_, 0, startColumn_) != prefix_) return {};
@@ -90,7 +90,8 @@ QString TerminalCommandCompletion::inputText() const {
 
 void TerminalCommandCompletion::beforeSend(const QByteArray &data) {
     if (accepting_) return;
-    if (!screen()->hasScroll() || data.contains('\x03') || data.contains('\x04')) {
+    // Vim can use application cursor keys without switching to the alternate screen.
+    if (!screen()->hasScroll() || display_->applicationCursorKeysMode() || data.contains('\x03') || data.contains('\x04')) {
         reset();
         return;
     }
@@ -112,7 +113,7 @@ void TerminalCommandCompletion::beforeSend(const QByteArray &data) {
 
 void TerminalCommandCompletion::afterOutput() {
     auto *current = screen();
-    if (!current->hasScroll()) {
+    if (!current->hasScroll() || display_->applicationCursorKeysMode()) {
         reset();
         return;
     }
@@ -139,6 +140,10 @@ void TerminalCommandCompletion::afterOutput() {
 bool TerminalCommandCompletion::eventFilter(QObject *watched, QEvent *event) {
     if (watched == display_) {
         if (event->type() == QEvent::KeyPress) {
+            if (!screen()->hasScroll() || display_->applicationCursorKeysMode()) {
+                reset();
+                return false;
+            }
             auto *key = dynamic_cast<QKeyEvent *>(event);
             if (completion_->handleKey(key)) return true;
             // Keep shell history navigation in the shell until the user edits the input.

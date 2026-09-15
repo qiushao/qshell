@@ -308,6 +308,22 @@ void terminalTest() {
     output("editor text\r\n");
     require(!history.commands().contains("editor text"), "alternate screen input was recorded");
     output("\x1b[?1049l");
+    completion.beforeSend("ech");
+    output("ech");
+    require(popup->isVisible(), "shell popup missing before entering application cursor mode");
+    const QStringList saved = history.commands();
+    output("\x1b[?1h");
+    require(!popup->isVisible(), "application cursor mode did not hide the shell popup");
+    completion.beforeSend("o editor");
+    output("o editor");
+    require(!popup->isVisible(), "application cursor mode opened shell completion");
+    sent.clear();
+    key(display, Qt::Key_Escape, "\x1b");
+    require(sent == "\x1b", "completion intercepted Escape in application cursor mode");
+    completion.beforeSend("\r");
+    output("\r\n");
+    require(history.commands() == saved, "application cursor mode input was recorded as a command");
+    output("\x1b[?1luser$ ");
     const QString wrapped = QStringLiteral("echo ") + QString(200, QLatin1Char('x')) + QString::fromUtf8(" 中文");
     completion.beforeSend(wrapped.toUtf8());
     output(wrapped.toUtf8());
@@ -412,38 +428,49 @@ void terminalResponseTest() {
 }
 
 #ifdef Q_OS_LINUX
-void shellTest(const QString &directory) {
+void shellTest(const QString &directory, ProtocolType protocol) {
+    class TestTerminal : public BaseTerminal {
+    public:
+        explicit TestTerminal(ProtocolType protocol) : BaseTerminal(nullptr) {
+            sessionData_.protocolType = protocol;
+            connect_ = true;
+        }
+        void connect() override {}
+        void disconnect() override {}
+        void writeToBackend(const QByteArray &data) override { write(data); }
+        using BaseTerminal::receiveBackendData;
+        std::function<void(const QByteArray &)> write;
+    };
     auto &history = CommandHistory::instance();
     history.clear();
-    QTermWidget terminal;
+    TestTerminal terminal(protocol);
     terminal.setHistorySize(1000);
     terminal.resize(640, 400);
     terminal.show();
     auto *display = terminal.findChild<TerminalDisplay *>();
     display->setFocus();
     QApplication::processEvents();
-    TerminalCommandCompletion completion(display);
     std::unique_ptr<IPtyProcess> shell(PtyQt::createPtyProcess());
     require(shell->startProcess("/bin/bash", {"--noprofile", "--norc", "-i"}, directory,
                                 {"PATH=/usr/bin:/bin", "TERM=xterm-256color", "PS1=test$ ", "HISTFILE=/dev/null", "INPUTRC=/dev/null"},
                                 static_cast<qint16>(terminal.screenColumnsCount()), static_cast<qint16>(terminal.screenLinesCount())),
             "could not start bash PTY");
     QByteArray received;
+    QObject::connect(terminal.findChild<ZmodemTransfer *>(), &ZmodemTransfer::terminalDataReady,
+                     &terminal, [&](const QByteArray &data) { received += data; });
     QObject::connect(shell->notifier(), &QIODevice::readyRead, &terminal, [&]() {
         const QByteArray data = shell->readAll();
-        received += data;
-        terminal.recvData(data.constData(), static_cast<int>(data.size()));
-        completion.afterOutput();
+        if (protocol == ProtocolType::SSH) {
+            // SSH reads may split terminal control sequences at any byte.
+            for (char byte : data) terminal.receiveBackendData(QByteArray(1, byte));
+        } else {
+            terminal.receiveBackendData(data);
+        }
     });
-    QObject::connect(&terminal, &QTermWidget::sendData, &terminal, [&](const char *data, int size) {
-        const QByteArray bytes(data, size);
-        completion.beforeSend(bytes);
-        shell->write(bytes);
-    });
+    terminal.write = [&](const QByteArray &data) { shell->write(data); };
     QByteArray replacement;
-    QObject::connect(&completion, &TerminalCommandCompletion::replaceInput, &terminal, [&](const QByteArray &data) {
+    QObject::connect(terminal.findChild<TerminalCommandCompletion *>(), &TerminalCommandCompletion::replaceInput, &terminal, [&](const QByteArray &data) {
         replacement = data;
-        shell->write(data);
     });
     auto waitFor = [](const std::function<bool()> &predicate, const char *message) {
         QElapsedTimer timer;
@@ -537,6 +564,37 @@ void shellTest(const QString &directory) {
         require(!replacement.contains('\r') && !replacement.contains('\n'), "whitespace completion executed the command");
         waitFor([&]() { return screenText().trimmed().endsWith("test$ " + command); }, "completion left characters from the previous input in bash");
     }
+    if (!QStandardPaths::findExecutable("vim").isEmpty()) {
+        const QStringList vimCommands = {
+                QStringLiteral("TERM=xterm-256color vim"),
+                QStringLiteral("TERM=vt100 vim"),
+                QStringLiteral("TERM=xterm-256color vim --cmd 'set t_ti= t_te='")};
+        for (const QString &vimCommand : vimCommands) {
+            received.clear();
+            key(display, Qt::Key_C, "\x03", Qt::ControlModifier);
+            waitFor([&]() { return received.endsWith("test$ "); }, "shell did not return to prompt before Vim test");
+            history.clear();
+            history.add("echo vim-completion-regression");
+            received.clear();
+            terminal.sendText(vimCommand + " -Nu NONE -i NONE -n -c 'redraw | echo \"qshell-vim-ready\"' vim-completion.txt\r");
+            waitFor([&]() { return received.count("qshell-vim-ready") == 2; }, "Vim did not finish drawing its initial screen");
+            if (vimCommand.contains("t_ti=")) {
+                require(!received.contains("\x1b[?1049h"), "Vim ignored the configuration disabling the alternate screen");
+            }
+            const QStringList saved = history.commands();
+            received.clear();
+            terminal.sendText("i");
+            terminal.sendText("echo vim-completion");
+            waitFor([&]() { return received.contains("echo vim-completion"); }, "Vim did not echo inserted text");
+            require(!popup->isVisible(), "Vim editing opened shell history completion");
+            key(display, Qt::Key_Escape, "\x1b");
+            terminal.sendText(":q!\r");
+            waitFor([&]() { return received.endsWith("test$ "); }, "Vim did not exit back to the shell");
+            require(history.commands() == saved, "Vim input was recorded as shell history");
+            terminal.sendText("echo vim-completion");
+            waitFor([&]() { return popup->isVisible(); }, "shell completion did not resume after Vim exited");
+        }
+    }
     terminal.hide();
     shell->kill();
 }
@@ -556,7 +614,8 @@ int main(int argc, char *argv[]) {
     terminalTest();
     terminalResponseTest();
 #ifdef Q_OS_LINUX
-    shellTest(directory.path());
+    shellTest(directory.path(), ProtocolType::LocalShell);
+    shellTest(directory.path(), ProtocolType::SSH);
 #endif
     return 0;
 }
