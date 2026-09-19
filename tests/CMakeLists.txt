@@ -195,6 +195,14 @@ set_tests_properties(quick_button_focus_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
 
+add_executable(terminal_scrollbar_test terminal_scrollbar_test.cpp ${QSHELL_I18N_TEST_SOURCES})
+target_link_libraries(terminal_scrollbar_test ${QSHELL_APP_LIBRARIES})
+target_compile_definitions(terminal_scrollbar_test PRIVATE APP_VERSION="${APP_VERSION}")
+add_test(NAME terminal_scrollbar_test COMMAND terminal_scrollbar_test)
+set_tests_properties(terminal_scrollbar_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND)
     add_test(NAME i18n_catalog_test

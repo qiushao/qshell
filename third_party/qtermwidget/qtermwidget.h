@@ -345,9 +345,6 @@ public slots:
     void screenShot(const QString &fileName);
     void repaintDisplay(void);
 
-protected:
-    void resizeEvent(QResizeEvent *) override;
-
 protected slots:
     void sessionFinished();
     void updateTerminalSize();

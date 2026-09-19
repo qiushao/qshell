@@ -18,7 +18,10 @@
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QScrollBar>
 #include <QSplitter>
+#include <QStyle>
+#include <QStyleFactory>
 #include <QTextStream>
 #include <QTimer>
 
@@ -128,6 +131,12 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     setTerminalSizeHint(false);
     setUrlFilterEnabled(false);
     setColorScheme(globalSettings.colorScheme);
+    // Keep terminal scrollbars full-sized and visible even with an overlay desktop style.
+    auto *scrollBar = findChild<QScrollBar *>();
+    auto *scrollBarStyle = QStyleFactory::create(QStringLiteral("Fusion"));
+    scrollBarStyle->setParent(scrollBar);
+    scrollBar->setStyle(scrollBarStyle);
+    scrollBar->setAutoFillBackground(true);
     setScrollBarPosition(ScrollBarRight);
     setConfirmMultilinePaste(false);
 

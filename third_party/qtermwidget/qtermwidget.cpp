@@ -359,11 +359,6 @@ void QTermWidget::sendKeyEvent(QKeyEvent *e) {
     m_emulation->sendKeyEvent(e, false);
 }
 
-void QTermWidget::resizeEvent(QResizeEvent*) {
-    //qDebug("global window resizing...with %d %d", this->size().width(), this->size().height());
-    m_terminalDisplay->resize(this->size());
-}
-
 void QTermWidget::sessionFinished() {
     emit finished();
 }
