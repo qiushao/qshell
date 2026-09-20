@@ -4,6 +4,7 @@
 
 #include "core/ConfigManager.h"
 #include "ptyqt.h"
+#include <QApplication>
 #include <QColorDialog>
 #include <QContextMenuEvent>
 #include <QDateTime>
@@ -29,6 +30,10 @@
 #include <cmath>
 
 namespace {
+
+// Scrollback depth per session. HistoryScrollBuffer allocates its full backing
+// store up front, so this is a memory-vs-convenience trade-off, not just a cap.
+constexpr int scrollbackLineCount = 10000;
 
 constexpr int pendingSendTimeoutMilliseconds = 5000;
 constexpr int pendingReceiveDelayMilliseconds = 300;
@@ -114,6 +119,17 @@ XyModemTransfer::Protocol xyModemProtocol(
                    : XyModemTransfer::Protocol::Ymodem;
 }
 
+// QApplication owns the styles returned by QStyleFactory::create(); ownership
+// stays with the application so a single instance can be shared by every
+// terminal's scroll bar instead of allocating and leaking one per session.
+QStyle *fusionScrollBarStyle() {
+    static QStyle *style = []() -> QStyle * {
+        QStyle *created = QStyleFactory::create(QStringLiteral("Fusion"));
+        return created != nullptr ? created : QApplication::style();
+    }();
+    return style;
+}
+
 }// namespace
 
 BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
@@ -127,15 +143,19 @@ BaseTerminal::BaseTerminal(QWidget *parent) : QTermWidget(parent, parent) {
     font_->setFamily(globalSettings.fontFamily);
     font_->setPointSize(globalSettings.fontSize);
     setTerminalFont(*font_);
-    setHistorySize(128000);
+    // The history buffer is allocated eagerly for the full line count, so this
+    // value directly sets the per-session memory footprint and the cost of the
+    // scroll-back reflow. 10000 lines is plenty for interactive use while
+    // keeping allocation an order of magnitude smaller than the previous 128000.
+    setHistorySize(scrollbackLineCount);
     setTerminalSizeHint(false);
     setUrlFilterEnabled(false);
     setColorScheme(globalSettings.colorScheme);
     // Keep terminal scrollbars full-sized and visible even with an overlay desktop style.
+    // The Fusion style is process-wide state, so create it once and share it
+    // across sessions instead of building one per terminal.
     auto *scrollBar = findChild<QScrollBar *>();
-    auto *scrollBarStyle = QStyleFactory::create(QStringLiteral("Fusion"));
-    scrollBarStyle->setParent(scrollBar);
-    scrollBar->setStyle(scrollBarStyle);
+    scrollBar->setStyle(fusionScrollBarStyle());
     scrollBar->setAutoFillBackground(true);
     setScrollBarPosition(ScrollBarRight);
     setConfirmMultilinePaste(false);
@@ -1396,6 +1416,10 @@ void BaseTerminal::startLogging(const QString &filePath, bool includeBufferedLog
 
     logFilePath_ = filePath;
     logging_ = true;
+    // Logging consumes the decoded line carried by onNewLineWithTimestamp, so
+    // ask the screen engine to keep producing it even when the timestamp panel
+    // is disabled.
+    setNewLineTextRequired(true);
 
     // 写入日志头
     QString header = QString("\n========== 日志开始: %1 ==========\n")
@@ -1443,6 +1467,9 @@ void BaseTerminal::stopLogging() {
     delete logFile_;
     logFile_ = nullptr;
     logging_ = false;
+    // No consumer needs the decoded line text any more unless the timestamp
+    // panel is still active.
+    setNewLineTextRequired(false);
 
     emit loggingStateChanged(false);
 

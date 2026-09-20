@@ -466,6 +466,12 @@ public:
      */
     void writeLinesToStream(TerminalCharacterDecoder* decoder, int fromLine, int toLine) const;
     void setTimestampEnabled(bool enabled);
+    /**
+     * Marks whether a consumer needs timestamps to be recorded even while the
+     * timestamp panel is disabled (for example session logging, which still
+     * wants a usable timestamp when the panel is later re-enabled).
+     */
+    void setLineTextRequired(bool required);
     QString lineTimestamp(int line) const;
 
     /**
@@ -651,6 +657,7 @@ private:
     QVarLengthArray<LineProperty,64> lineProperties;
     QVector<qint64> lineTimestamps_;
     bool timestampEnabled_ = false;
+    bool lineTextRequired_ = false;
     void stampCurrentLine();
 
     // history buffer ---------------

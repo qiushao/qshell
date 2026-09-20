@@ -341,6 +341,7 @@ public slots:
     void saveHistory(QTextStream *stream, int format = 0, int start = -1, int end = -1,
                      bool includeTimestamps = false);
     void setTerminalTimestampEnabled(bool enabled);
+    void setNewLineTextRequired(bool required);
     void screenShot(QPixmap *pixmap);
     void screenShot(const QString &fileName);
     void repaintDisplay(void);

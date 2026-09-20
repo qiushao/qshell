@@ -1,9 +1,7 @@
 #include "SSHTerminal.h"
 #include "WindowsX11Server.h"
 #include "qtermwidget.h"
-#include <QCoreApplication>
 #include <QDebug>
-#include <QEventLoop>
 #include <QMessageBox>
 #include <QTimer>
 #include <ws2tcpip.h>
@@ -53,6 +51,12 @@ void SSHTerminal::connect() {
                      this, &SSHTerminal::onSocketReadyRead);
     readNotifier_->setEnabled(true);
 
+    // 可写事件：仅当 libssh2 返回 EAGAIN 时才启用，用于继续推送积压数据
+    writeNotifier_ = new QSocketNotifier((qintptr)sock_, QSocketNotifier::Write, this);
+    QObject::connect(writeNotifier_, &QSocketNotifier::activated,
+                     this, &SSHTerminal::onSocketWritable);
+    writeNotifier_->setEnabled(false);
+
     QTimer::singleShot(0, this, &SSHTerminal::syncPtySize);
     QTimer::singleShot(100, this, &SSHTerminal::syncPtySize);
 
@@ -69,6 +73,14 @@ void SSHTerminal::disconnect() {
         readNotifier_ = nullptr;
     }
 
+    if (writeNotifier_) {
+        writeNotifier_->setEnabled(false);
+        writeNotifier_->deleteLater();
+        writeNotifier_ = nullptr;
+    }
+
+    pendingWrite_.clear();
+
     cleanup();
     qDebug() << "SSH disconnected from" << sessionData_.name;
 }
@@ -83,6 +95,9 @@ void SSHTerminal::onSocketReadyRead() {
     }
 
     readAvailableData();   // 原有 shell 数据
+    // Processing inbound data frees SSH flow-control credit, so retry any
+    // queued outbound bytes here as well as on socket writability.
+    flushPendingWrite();
     pumpRemoteX11();       // 远端→本地 累积与下发
     // 把本地积压（EAGAIN 时未写完）继续推送到远端
     for (auto *xf : x11Chans_) {
@@ -489,29 +504,49 @@ bool SSHTerminal::openChannel() {
 }
 
 void SSHTerminal::writeToBackend(const QByteArray &data) {
-    if (!channel_ || !running_) return;
+    if (!channel_ || !running_ || data.isEmpty()) return;
 
-    const char *ptr = data.constData();
-    int remaining = data.size();
+    // Queue first, then try to push. libssh2 returns EAGAIN when the TCP send
+    // window is full; spinning on it previously required re-entering the event
+    // loop from the input path, which dropped keystrokes. Instead we keep the
+    // remainder queued and retry from onSocketWritable()/onSocketReadyRead().
+    pendingWrite_.append(data);
+    flushPendingWrite();
+}
 
-    while (remaining > 0) {
-        ssize_t written = libssh2_channel_write(channel_, ptr, remaining);
+void SSHTerminal::flushPendingWrite() {
+    if (pendingWrite_.isEmpty() || !channel_ || !running_) return;
+
+    while (!pendingWrite_.isEmpty()) {
+        const ssize_t written = libssh2_channel_write(
+                channel_, pendingWrite_.constData(), pendingWrite_.size());
 
         if (written == LIBSSH2_ERROR_EAGAIN) {
-            // 处理事件循环，避免死锁
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 1);
-            continue;
+            // Socket is not writable right now. Ask for a writability
+            // notification rather than blocking or polling.
+            if (writeNotifier_) {
+                writeNotifier_->setEnabled(true);
+            }
+            return;
         }
 
         if (written < 0) {
-            QMessageBox::critical(this, tr("SSH Error"), tr("Failed to send data"));
+            pendingWrite_.clear();
             emit onSessionError(this);
             return;
         }
 
-        ptr += written;
-        remaining -= written;
+        pendingWrite_.remove(0, static_cast<int>(written));
     }
+
+    if (writeNotifier_) {
+        writeNotifier_->setEnabled(false);
+    }
+}
+
+void SSHTerminal::onSocketWritable() {
+    if (!running_ || !channel_) return;
+    flushPendingWrite();
 }
 
 void SSHTerminal::resizePty(int cols, int rows) {
@@ -773,6 +808,7 @@ void SSHTerminal::purgeClosedX11Forwards()
 
 void SSHTerminal::cleanup() {
     running_ = false;
+    pendingWrite_.clear();
 
     for (LIBSSH2_CHANNEL *chan: pendingX11Chans_) {
         libssh2_channel_free(chan);

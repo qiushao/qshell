@@ -988,20 +988,26 @@ bool ConPtyProcess::startProcess(const QString &executable,
     //this code runned in separate thread
     m_readThread = QThread::create([this]() {
         //buffers
-        const DWORD BUFF_SIZE{1024};
-        char szBuffer[BUFF_SIZE]{};
+        // A 1 KiB buffer forced one cross-thread wakeup per KiB, so a full-screen
+        // repaint (tens of KiB) queued dozens of events and starved the GUI
+        // thread. Read in large blocks instead; the pipe returns whatever is
+        // currently buffered, so short interactive output is not delayed.
+        const DWORD BUFF_SIZE{64 * 1024};
+        QByteArray readBuffer(BUFF_SIZE, Qt::Uninitialized);
 
         forever {
             DWORD dwBytesRead{};
 
             // Read from the pipe
-            BOOL result = ReadFile(m_hPipeIn, szBuffer, BUFF_SIZE, &dwBytesRead, NULL);
+            BOOL result = ReadFile(m_hPipeIn, readBuffer.data(), BUFF_SIZE, &dwBytesRead, NULL);
 
             const bool needMoreData = !result && GetLastError() == ERROR_MORE_DATA;
             if (result || needMoreData) {
-                QMutexLocker locker(&m_bufferMutex);
-                m_buffer.m_readBuffer.append(szBuffer, dwBytesRead);
-                m_buffer.emitReadyRead();
+                if (dwBytesRead > 0) {
+                    QMutexLocker locker(&m_bufferMutex);
+                    m_buffer.m_readBuffer.append(readBuffer.constData(), dwBytesRead);
+                    m_buffer.emitReadyRead();
+                }
             }
 
             const bool brokenPipe = !result && GetLastError() == ERROR_BROKEN_PIPE;
@@ -1106,6 +1112,12 @@ QByteArray ConPtyProcess::readAll()
     QByteArray result;
     {
         QMutexLocker locker(&m_bufferMutex);
+        // Clear the coalescing flag while still holding the lock that the
+        // producer takes before appending. If the producer already queued more
+        // data, it has re-raised the flag and we will be woken again; if it
+        // appends after this reset, it emits a fresh readyRead. Either way no
+        // output is stranded in the buffer.
+        m_buffer.takeReadyReadPending();
         result.swap(m_buffer.m_readBuffer);
     }
     return result;

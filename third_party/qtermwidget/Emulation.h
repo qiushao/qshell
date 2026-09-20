@@ -165,6 +165,7 @@ public:
      */
     void setHistory(const HistoryType&);
     void setTimestampEnabled(bool enabled);
+    void setLineTextRequired(bool required);
     /** Returns the history store used by this emulation.  See setHistory() */
     const HistoryType& history() const;
     /** Clears the history scroll. */

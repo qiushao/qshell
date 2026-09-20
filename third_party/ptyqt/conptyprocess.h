@@ -11,6 +11,7 @@
 #include <QMutex>
 #include <QTimer>
 #include <QThread>
+#include <atomic>
 
 //Taken from the RS5 Windows SDK, but redefined here in case we're targeting <= 17733
 //Just for compile, ConPty doesn't work with Windows SDK < 17733
@@ -38,11 +39,25 @@ public:
 
     void emitReadyRead()
     {
+        // Coalesce producer-side notifications. The reader thread can append
+        // many chunks between two GUI event loop iterations; emitting once per
+        // chunk floods the receiving thread's event queue and starves painting.
+        // pendingReadyRead_ is cleared by the consumer before it drains the
+        // buffer (see ConPtyProcess::readAll), so no wakeup can be lost.
+        if (pendingReadyRead_.exchange(true)) {
+            return;
+        }
         emit readyRead();
+    }
+
+    bool takeReadyReadPending()
+    {
+        return pendingReadyRead_.exchange(false);
     }
 
 private:
     QByteArray m_readBuffer;
+    std::atomic_bool pendingReadyRead_{false};
 };
 
 class ConPtyProcess : public IPtyProcess

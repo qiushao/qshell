@@ -155,8 +155,16 @@ void Screen::setTimestampEnabled(bool enabled) {
     timestampEnabled_ = enabled;
 }
 
+void Screen::setLineTextRequired(bool required) {
+    lineTextRequired_ = required;
+}
+
 QString Screen::lineTimestamp(int line) const {
-    if (!timestampEnabled_ || line < 0 || line >= getHistLines() + lines)
+    if (line < 0 || line >= getHistLines() + lines)
+        return {};
+    // Timestamps are only exposed while the panel is on; logging keeps its own
+    // copy through the raw ms value, so a hidden panel never clears history.
+    if (!timestampEnabled_)
         return {};
     const qint64 timestamp = line < getHistLines()
             ? history->lineTimestamp(line) : lineTimestamps_[line - getHistLines()];
@@ -165,7 +173,9 @@ QString Screen::lineTimestamp(int line) const {
 }
 
 void Screen::stampCurrentLine() {
-    if (timestampEnabled_ && lineTimestamps_[cuY] == 0)
+    // Record even while the timestamp panel is hidden when a log consumer asked
+    // for it, so a log written with timestamps off still carries real times.
+    if ((timestampEnabled_ || lineTextRequired_) && lineTimestamps_[cuY] == 0)
         lineTimestamps_[cuY] = QDateTime::currentMSecsSinceEpoch();
 }
 
@@ -173,6 +183,9 @@ void Screen::index() {
     stampCurrentLine();
     const QString timestamp = lineTimestamp(getHistLines() + cuY);
     //qiushao patch start
+    // The decoded line is always produced: onNewLine is consumed unconditionally
+    // by script/MCP/completion integrations, and onNewLineWithTimestamp must
+    // still fire with an empty timestamp while the timestamp feature is off.
     QString result;
     QTextStream stream(&result, QIODevice::ReadWrite);
 

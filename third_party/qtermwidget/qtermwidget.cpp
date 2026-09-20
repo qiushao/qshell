@@ -665,6 +665,10 @@ void QTermWidget::setTerminalTimestampEnabled(bool enabled) {
     m_timestampDisplay->setVisible(enabled);
 }
 
+void QTermWidget::setNewLineTextRequired(bool required) {
+    m_emulation->setLineTextRequired(required);
+}
+
 void QTermWidget::saveHistory(QTextStream *stream, int format, int start, int end,
                              bool includeTimestamps) {
     if (format == 0 && includeTimestamps && !m_timestampDisplay->isHidden()) {

@@ -140,6 +140,11 @@ void Emulation::setTimestampEnabled(bool enabled) {
         screen->setTimestampEnabled(enabled);
 }
 
+void Emulation::setLineTextRequired(bool required) {
+    for (Screen *screen : _screen)
+        screen->setLineTextRequired(required);
+}
+
 void Emulation::setHistory(const HistoryType &t) {
     _screen[0]->setScroll(t);
 

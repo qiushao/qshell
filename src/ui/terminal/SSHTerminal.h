@@ -41,6 +41,10 @@ private:
 
 private slots:
     void onSocketReadyRead();
+    void onSocketWritable();
+
+private:
+    void flushPendingWrite();
 
 private:
     struct X11Forward {
@@ -73,6 +77,8 @@ private:
     bool running_ = false;
     bool x11ForwardingEnabled_ = false;
     QSocketNotifier *readNotifier_ = nullptr;
+    QSocketNotifier *writeNotifier_ = nullptr;
+    QByteArray pendingWrite_;
 
     std::vector<LIBSSH2_CHANNEL *> pendingX11Chans_;
     std::vector<X11Forward *> x11Chans_;
