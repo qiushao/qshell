@@ -8,6 +8,7 @@
 #include <QFontDatabase>
 #include <QApplication>
 #include <QVector>
+#include <QHash>
 #include <string>
 
 class CharWidth
@@ -17,6 +18,7 @@ public:
     ~CharWidth();
 
     void setFont(QFont font);
+    int characterWidth(uint ucs);
     int font_width(uint ucs);
     int font_width(const QChar & c);
     int string_font_width( const std::wstring & wstr );
@@ -31,6 +33,8 @@ public:
 
 private:
     QFontMetrics *fm;
+    int referenceWidth_;
+    QHash<uint, int> fontWidths_;
 };
 
 #endif // CHARWIDTH_H
