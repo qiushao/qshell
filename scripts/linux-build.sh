@@ -15,6 +15,6 @@ fi
 echo "Building version: ${VERSION}"
 
 rm -rf build
-cmake -B build -S . -DAPP_VERSION="${VERSION}"
+cmake -B build -S . -DAPP_VERSION="${VERSION}" -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 cmake --build build --target package
