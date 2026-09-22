@@ -66,7 +66,13 @@ set(SRC_FILES main.cpp
         ui/command/CommandCompletionPopup.cpp
         ui/command/CommandButtonBar.cpp
         scriptengine/LuaScriptEngine.cpp
+        scriptengine/LuaAppModule.cpp
+        scriptengine/LuaHttpModule.cpp
+        scriptengine/LuaScreenModule.cpp
         scriptengine/LuaSerialModule.cpp
+        scriptengine/LuaSessionModule.cpp
+        scriptengine/LuaTimerModule.cpp
+        scriptengine/LuaZmodemModule.cpp
         scriptengine/ScriptRunner.cpp
         mcp/McpHttpServer.cpp
         mcp/McpHttpServer.h

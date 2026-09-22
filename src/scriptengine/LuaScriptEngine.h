@@ -1,19 +1,17 @@
 // LuaScriptEngine.h
 #pragma once
+#include "LuaAppModule.h"
+#include "LuaHttpModule.h"
+#include "LuaScreenModule.h"
 #include "LuaSerialModule.h"
-#include <QFile>
+#include "LuaSessionModule.h"
+#include "LuaTimerModule.h"
+#include "LuaZmodemModule.h"
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QRegularExpression>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
+#include <atomic>
 #include <sol/sol.hpp>
-#include <chrono>
-#include <vector>
-#include <mutex>
-#include <memory>
 
 class MainWindow;
 
@@ -27,53 +25,22 @@ public:
     bool isRunning();
     static void stopScript();
 
-    signals:
-        void scriptError(const QString &error);
+signals:
+    void scriptError(const QString &error);
     void scriptFinished();
 
 private:
     void registerAPIs();
-    void registerAppModule(sol::table &qshell);
-    void registerScreenModule(sol::table &qshell);
-    void registerSessionModule(sol::table &qshell);
-    void registerZmodemModule(sol::table &qshell);
-    void registerTimerModule(sol::table &qshell);
-    void registerHttpModule(sol::table &qshell);
-    void onDisplayOutput(const QString &line);
-    bool waitForStrings(const QStringList& strings, int timeoutSeconds);
-
-    // 定时器处理
-    void processTimers();
-    void interruptibleSleep(int milliseconds);
-
-    // HTTP 请求辅助方法
-    sol::table performHttpRequest(const std::string& method,
-                                   const std::string& url,
-                                   const std::string& body,
-                                   sol::optional<sol::table> options);
 
     sol::state lua_;
-    LuaSerialModule serialModule_;
-    std::unique_ptr<QFile> logFile_;
     MainWindow *mainWindow_ = nullptr;
     std::atomic<bool> running_{false};
 
-    // waitForRegexp 相关变量
-    bool isWaitForRegexp_ = false;
-    QRegularExpression waitForRegexp_;
-    bool findWaitForRegexp_ = false;
-    QString lastRegexpMatch_;
-
-    // Timer 模块相关
-    struct TimerInfo {
-        int id;
-        std::chrono::steady_clock::time_point nextTrigger;
-        int intervalMs;  // 0 = 单次定时器, >0 = 重复定时器
-        sol::function callback;
-        bool active;
-    };
-
-    std::vector<TimerInfo> timers_;
-    std::mutex timersMutex_;
-    int nextTimerId_ = 1;
+    LuaTimerModule timerModule_;
+    LuaAppModule appModule_;
+    LuaScreenModule screenModule_;
+    LuaSessionModule sessionModule_;
+    LuaZmodemModule zmodemModule_;
+    LuaHttpModule httpModule_;
+    LuaSerialModule serialModule_;
 };
