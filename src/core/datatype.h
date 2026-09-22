@@ -286,7 +286,7 @@ struct GlobalSettings {
     QString colorScheme = "Tango";
     bool copyOnSelect = false;
     bool commandHistoryCompletion = true;
-    bool debug = true;
+    bool debug = false;
     bool terminalTimestamp = false;
     bool autoSaveLog = false;
     QString autoSaveLogDirectory;
