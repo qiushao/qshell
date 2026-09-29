@@ -277,6 +277,31 @@ void terminalTest() {
     completion.beforeSend("echo delayed\r");
     output("echo delayed\r\ndelayed\r\nuser$ ");
     require(history.commands().last() == "echo delayed", "paste with Enter before echo was not recorded");
+    for (bool fragmented : {false, true}) {
+        for (const QByteArray &completionOutput : {QByteArray("ta/"),
+                                                  QByteArray("\r\n\x07user$ rm -rf /data/"),
+                                                  QByteArray("\r\ndata/  database/\r\nuser$ rm -rf /data/")}) {
+            const QStringList saved = history.commands();
+            completion.beforeSend("rm -rf /da");
+            output("rm -rf /da");
+            completion.beforeSend("\t");
+            if (fragmented) {
+                for (char byte : completionOutput) output(QByteArray(1, byte));
+            } else {
+                output(completionOutput);
+            }
+            require(history.commands() == saved, "Tab completion recorded an unsubmitted command");
+            const QByteArray suffix = QByteArray(terminal.screenColumnsCount(), 'x') + "/target";
+            completion.beforeSend(suffix);
+            output(suffix);
+            completion.beforeSend("\r");
+            output("\r\nuser$ ");
+            const QString command = QString::fromUtf8("rm -rf /data/" + suffix);
+            require(history.commands().last() == command, "Tab-completed command lost the completed path or subsequent input");
+            require(!history.commands().contains("rm -rf /da"), "pre-completion input was recorded instead of the submitted command");
+            history.remove({command});
+        }
+    }
     completion.beforeSend("secret");
     completion.beforeSend("\r");
     output("\r\nuser$ ");
@@ -460,8 +485,8 @@ void shellTest(const QString &directory, ProtocolType protocol) {
                      &terminal, [&](const QByteArray &data) { received += data; });
     QObject::connect(shell->notifier(), &QIODevice::readyRead, &terminal, [&]() {
         const QByteArray data = shell->readAll();
-        if (protocol == ProtocolType::SSH) {
-            // SSH reads may split terminal control sequences at any byte.
+        if (protocol == ProtocolType::SSH || protocol == ProtocolType::Serial) {
+            // Remote reads may split terminal control sequences at any byte.
             for (char byte : data) terminal.receiveBackendData(QByteArray(1, byte));
         } else {
             terminal.receiveBackendData(data);
@@ -532,8 +557,9 @@ void shellTest(const QString &directory, ProtocolType protocol) {
     waitFor([&]() { return screenText().trimmed().endsWith("test$ cat qshell-tab-target.txt"); }, "Tab did not perform native shell filename completion");
     require(replacement.isEmpty(), "Tab selected history instead of shell completion");
     received.clear();
-    terminal.sendText("\x03");
-    waitFor([&]() { return received.endsWith("test$ "); }, "shell did not return to prompt after cancellation");
+    terminal.sendText("qshell-tab-target.txt\r");
+    waitFor([&]() { return history.commands().contains("cat qshell-tab-target.txt qshell-tab-target.txt") && received.endsWith("test$ "); },
+            "native Tab completion and subsequent input were not recorded in full");
     history.clear();
     history.add("cd sources/android-projects");
     history.add("cd sources/clion-projects/qshell/");
@@ -616,6 +642,7 @@ int main(int argc, char *argv[]) {
 #ifdef Q_OS_LINUX
     shellTest(directory.path(), ProtocolType::LocalShell);
     shellTest(directory.path(), ProtocolType::SSH);
+    shellTest(directory.path(), ProtocolType::Serial);
 #endif
     return 0;
 }

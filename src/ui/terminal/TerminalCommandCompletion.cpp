@@ -58,6 +58,7 @@ void TerminalCommandCompletion::reset() {
     submitted_ = false;
     accepting_ = false;
     browsingHistory_ = false;
+    tabCompletion_ = false;
     completion_->hide();
 }
 
@@ -105,6 +106,7 @@ void TerminalCommandCompletion::beforeSend(const QByteArray &data) {
         startColumn_ = current->getCursorX();
         prefix_ = rowText(current, startRow_, 0, startColumn_);
     }
+    if (data.contains('\t')) tabCompletion_ = true;
     if (data.contains('\r') || data.contains('\n')) {
         submitted_ = startRow_ >= 0;
         completion_->hide();
@@ -128,6 +130,16 @@ void TerminalCommandCompletion::afterOutput() {
             reset();
         }
         return;
+    }
+    if (tabCompletion_ && !prefix_.isEmpty()) {
+        // Completion can print candidates and redraw the prompt on a new line.
+        // Follow the redrawn input, including when it wraps or arrives in chunks.
+        int row = current->getHistLines() + current->getCursorY();
+        while (row > startRow_ && (current->getLineProperties(row - 1, row - 1).first() & LINE_WRAPPED)) --row;
+        if (row > startRow_ && startColumn_ < current->getColumns() &&
+            rowText(current, row, 0, startColumn_) == prefix_) {
+            startRow_ = row;
+        }
     }
     if (!accepting_ && !browsingHistory_) {
         const QRect cursor(display_->getCursorX() * display_->fontWidth() + display_->margin(),

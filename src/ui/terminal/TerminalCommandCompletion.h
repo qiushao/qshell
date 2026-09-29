@@ -34,6 +34,7 @@ private:
     bool submitted_ = false;
     bool accepting_ = false;
     bool browsingHistory_ = false;
+    bool tabCompletion_ = false;
 };
 
 #endif
