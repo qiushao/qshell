@@ -364,6 +364,22 @@
     <context>
         <name>CommandHistoryDialog</name>
         <message>
+            <source>Search commands...</source>
+            <translation>搜尋命令…</translation>
+        </message>
+        <message>
+            <source>Previous Page</source>
+            <translation>上一頁</translation>
+        </message>
+        <message>
+            <source>Next Page</source>
+            <translation>下一頁</translation>
+        </message>
+        <message>
+            <source>Page %1 / %2 (%3 commands)</source>
+            <translation>第 %1 / %2 頁（共 %3 條命令）</translation>
+        </message>
+        <message>
             <source>Command History</source>
             <translation>命令歷史記錄</translation>
         </message>
@@ -1174,6 +1190,14 @@ Remove the old entry from:
     </context>
     <context>
         <name>SettingDialog</name>
+        <message>
+            <source>Command History Size:</source>
+            <translation>命令歷史記錄大小：</translation>
+        </message>
+        <message>
+            <source>Maximum number of commands to keep. The oldest commands are removed when the limit is exceeded.</source>
+            <translation>最多保留的命令條數，超過上限時刪除最早的命令。</translation>
+        </message>
         <message>
             <source>Settings</source>
             <translation>設置</translation>

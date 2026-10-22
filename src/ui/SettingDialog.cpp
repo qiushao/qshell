@@ -8,6 +8,7 @@
 #include <QIntValidator>
 #include <QLabel>
 #include <QMessageBox>
+#include <limits>
 
 SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle(tr("Settings"));
@@ -20,6 +21,7 @@ SettingDialog::SettingDialog(QWidget *parent) : QDialog(parent) {
     colorSchemeEdit_->setCurrentText(settings.colorScheme);
     copyOnSelectCheckBox_->setChecked(settings.copyOnSelect);
     commandHistoryCompletionCheckBox_->setChecked(settings.commandHistoryCompletion);
+    commandHistorySizeSpinBox_->setValue(settings.commandHistorySize);
     debugCheckBox_->setChecked(settings.debug);
     terminalTimestampCheckBox_->setChecked(settings.terminalTimestamp);
     autoSaveLogDirectoryEdit_->setText(settings.autoSaveLogDirectory);
@@ -53,7 +55,16 @@ void SettingDialog::initWidgets() {
 
     commandHistoryCompletionCheckBox_ = new QCheckBox(this);
     commandHistoryCompletionCheckBox_->setToolTip(tr("Show command history suggestions in terminals and the command input box"));
-    formLayout_->addRow(tr("Command History Completion:"), commandHistoryCompletionCheckBox_);
+
+    commandHistorySizeSpinBox_ = new QSpinBox(this);
+    commandHistorySizeSpinBox_->setObjectName(QStringLiteral("commandHistorySize"));
+    commandHistorySizeSpinBox_->setRange(1, std::numeric_limits<int>::max());
+    commandHistorySizeSpinBox_->setToolTip(tr("Maximum number of commands to keep. The oldest commands are removed when the limit is exceeded."));
+    auto *commandHistoryLayout = new QHBoxLayout();
+    commandHistoryLayout->addWidget(commandHistoryCompletionCheckBox_);
+    commandHistoryLayout->addWidget(new QLabel(tr("Command History Size:"), this));
+    commandHistoryLayout->addWidget(commandHistorySizeSpinBox_);
+    formLayout_->addRow(tr("Command History Completion:"), commandHistoryLayout);
 
     debugCheckBox_ = new QCheckBox(this);
     debugCheckBox_->setToolTip(tr("Enable debug log console"));
@@ -157,6 +168,7 @@ void SettingDialog::onOK() {
     settings.colorScheme = colorSchemeEdit_->currentText();
     settings.copyOnSelect = copyOnSelectCheckBox_->isChecked();
     settings.commandHistoryCompletion = commandHistoryCompletionCheckBox_->isChecked();
+    settings.commandHistorySize = commandHistorySizeSpinBox_->value();
     settings.debug = debugCheckBox_->isChecked();
     settings.terminalTimestamp = terminalTimestampCheckBox_->isChecked();
     settings.autoSaveLog = autoSaveLogCheckBox_->isChecked();

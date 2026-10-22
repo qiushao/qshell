@@ -364,6 +364,22 @@ The %1 buttons in this group will also be deleted.</translation>
     <context>
         <name>CommandHistoryDialog</name>
         <message>
+            <source>Search commands...</source>
+            <translation>Search commands...</translation>
+        </message>
+        <message>
+            <source>Previous Page</source>
+            <translation>Previous Page</translation>
+        </message>
+        <message>
+            <source>Next Page</source>
+            <translation>Next Page</translation>
+        </message>
+        <message>
+            <source>Page %1 / %2 (%3 commands)</source>
+            <translation>Page %1 / %2 (%3 commands)</translation>
+        </message>
+        <message>
             <source>Command History</source>
             <translation>Command History</translation>
         </message>
@@ -1174,6 +1190,14 @@ Remove the old entry from:
     </context>
     <context>
         <name>SettingDialog</name>
+        <message>
+            <source>Command History Size:</source>
+            <translation>Command History Size:</translation>
+        </message>
+        <message>
+            <source>Maximum number of commands to keep. The oldest commands are removed when the limit is exceeded.</source>
+            <translation>Maximum number of commands to keep. The oldest commands are removed when the limit is exceeded.</translation>
+        </message>
         <message>
             <source>Settings</source>
             <translation>Settings</translation>

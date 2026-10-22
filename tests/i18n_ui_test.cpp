@@ -205,6 +205,10 @@ int main(int argc, char *argv[]) {
         SettingDialog settings(&window);
         require(hasLabel(settings, fontLabels[i]), "settings labels not translated");
         require(settings.windowTitle() == SettingDialog::tr("Settings"), "settings title not translated");
+        auto *historySize = settings.findChild<QSpinBox *>("commandHistorySize");
+        require(historySize && historySize->value() == 10000 && historySize->minimum() == 1,
+                "settings did not show the default history capacity and positive range");
+        require(hasLabel(settings, SettingDialog::tr("Command History Size:")), "history capacity label not translated");
         SessionEditDialog properties(&window);
         require(properties.windowTitle() == sessionTitles[i], "session properties not translated");
         auto *box = properties.findChild<QDialogButtonBox *>();
@@ -226,6 +230,24 @@ int main(int argc, char *argv[]) {
         }
     }
     const QString previous = languages->language();
+    {
+        SettingDialog settings(&window);
+        settings.findChild<QSpinBox *>("commandHistorySize")->setValue(12345);
+        for (auto *button : settings.findChildren<QPushButton *>()) {
+            if (button->text() == SettingDialog::tr("OK")) button->click();
+        }
+        auto *config = ConfigManager::instance();
+        require(config->load() && config->globalSettings().commandHistorySize == 12345,
+                "settings dialog did not persist the configured history capacity");
+        SettingDialog reopened(&window);
+        auto *historySize = reopened.findChild<QSpinBox *>("commandHistorySize");
+        require(historySize->value() == 12345, "settings dialog did not restore the configured history capacity");
+        historySize->setValue(1);
+        for (auto *button : reopened.findChildren<QPushButton *>()) {
+            if (button->text() == SettingDialog::tr("Cancel")) button->click();
+        }
+        require(config->globalSettings().commandHistorySize == 12345, "cancelling settings changed history capacity");
+    }
     require(!languages->setLanguage("unsupported") && languages->language() == previous,
             "invalid language changed state");
     terminal->disconnect();

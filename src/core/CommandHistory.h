@@ -24,6 +24,7 @@ private:
 
     QString filePath_;
     QStringList commands_;
+    int maximumSize_ = 10000;
 };
 
 #endif

@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QLabel>
 #include <QDialogButtonBox>
+#include <QLineEdit>
 
 CommandHistoryDialog::CommandHistoryDialog(QWidget *parent)
     : QDialog(parent) {
@@ -23,18 +24,50 @@ CommandHistoryDialog::CommandHistoryDialog(QWidget *parent)
 
     auto *layout = new QVBoxLayout(this);
 
+    searchEdit_ = new QLineEdit(this);
+    searchEdit_->setObjectName(QStringLiteral("commandHistorySearch"));
+    searchEdit_->setPlaceholderText(tr("Search commands..."));
+    searchEdit_->setClearButtonEnabled(true);
+    layout->addWidget(searchEdit_);
+    connect(searchEdit_, &QLineEdit::textChanged, this, [this]() {
+        currentPage_ = 0;
+        reloadHistory();
+    });
+
     // 历史记录列表
     listWidget_ = new QListWidget(this);
     listWidget_->setObjectName(QStringLiteral("commandHistoryList"));
     listWidget_->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // 按时间倒序显示（最新的在最上面）
-    reloadHistory();
     connect(&CommandHistory::instance(), &CommandHistory::changed,
             this, &CommandHistoryDialog::reloadHistory);
 
     layout->addWidget(new QLabel(tr("Double-click to select a command:")));
     layout->addWidget(listWidget_);
+
+    auto *pageLayout = new QHBoxLayout();
+    previousButton_ = new QPushButton(tr("Previous Page"), this);
+    previousButton_->setObjectName(QStringLiteral("previousHistoryPage"));
+    previousButton_->setAutoDefault(false);
+    nextButton_ = new QPushButton(tr("Next Page"), this);
+    nextButton_->setObjectName(QStringLiteral("nextHistoryPage"));
+    nextButton_->setAutoDefault(false);
+    pageLabel_ = new QLabel(this);
+    pageLabel_->setObjectName(QStringLiteral("commandHistoryPage"));
+    pageLabel_->setAlignment(Qt::AlignCenter);
+    pageLayout->addWidget(previousButton_);
+    pageLayout->addWidget(pageLabel_, 1);
+    pageLayout->addWidget(nextButton_);
+    layout->addLayout(pageLayout);
+    connect(previousButton_, &QPushButton::clicked, this, [this]() {
+        --currentPage_;
+        showPage();
+    });
+    connect(nextButton_, &QPushButton::clicked, this, [this]() {
+        ++currentPage_;
+        showPage();
+    });
 
     // 按钮
     auto *buttonLayout = new QHBoxLayout();
@@ -68,14 +101,32 @@ CommandHistoryDialog::CommandHistoryDialog(QWidget *parent)
 
     connect(listWidget_, &QListWidget::itemDoubleClicked,
             this, &CommandHistoryDialog::onItemDoubleClicked);
+    reloadHistory();
 }
 
 void CommandHistoryDialog::reloadHistory() {
-    listWidget_->clear();
+    filteredCommands_.clear();
+    const QString query = searchEdit_->text();
     const auto &history = CommandHistory::instance().commands();
     for (auto it = history.crbegin(); it != history.crend(); ++it) {
-        listWidget_->addItem(*it);
+        if (it->contains(query, Qt::CaseInsensitive)) {
+            filteredCommands_.append(*it);
+        }
     }
+    showPage();
+}
+
+void CommandHistoryDialog::showPage() {
+    const int pageCount = static_cast<int>((filteredCommands_.size() + pageSize_ - 1) / pageSize_);
+    currentPage_ = qBound(0, currentPage_, qMax(0, pageCount - 1));
+    listWidget_->clear();
+    listWidget_->addItems(filteredCommands_.mid(currentPage_ * pageSize_, pageSize_));
+    previousButton_->setEnabled(currentPage_ > 0);
+    nextButton_->setEnabled(currentPage_ + 1 < pageCount);
+    pageLabel_->setText(tr("Page %1 / %2 (%3 commands)")
+                               .arg(pageCount == 0 ? 0 : currentPage_ + 1)
+                               .arg(pageCount)
+                               .arg(filteredCommands_.size()));
 }
 
 void CommandHistoryDialog::onDeleteSelected() {

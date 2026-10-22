@@ -1,4 +1,5 @@
 #include "CommandHistory.h"
+#include "ConfigManager.h"
 
 #include <QDebug>
 #include <QDir>
@@ -11,6 +12,16 @@
 #include <utility>
 
 CommandHistory::CommandHistory(QString filePath) : filePath_(std::move(filePath)) {
+    auto *config = ConfigManager::instance();
+    maximumSize_ = qMax(1, config->globalSettings().commandHistorySize);
+    connect(config, &ConfigManager::globalSettingsChanged, this, [this, config]() {
+        maximumSize_ = qMax(1, config->globalSettings().commandHistorySize);
+        if (commands_.size() > maximumSize_) {
+            commands_.erase(commands_.begin(), commands_.end() - maximumSize_);
+            save();
+            emit changed();
+        }
+    });
     QFile file(filePath_);
     if (file.open(QIODevice::ReadOnly)) {
         const auto array = QJsonDocument::fromJson(file.readAll()).array();
@@ -44,7 +55,7 @@ void CommandHistory::remember(const QString &command) {
     }
     commands_.removeAll(trimmed);
     commands_.append(trimmed);
-    while (commands_.size() > 1000) {
+    while (commands_.size() > maximumSize_) {
         commands_.removeFirst();
     }
 }

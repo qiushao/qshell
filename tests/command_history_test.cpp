@@ -12,6 +12,10 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QLabel>
+#include <QLineEdit>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QMouseEvent>
@@ -43,6 +47,10 @@ void key(QWidget *widget, int code, const QString &text = {}, Qt::KeyboardModifi
 }
 
 void storageTest(const QString &directory) {
+    auto *config = ConfigManager::instance();
+    auto settings = config->globalSettings();
+    settings.commandHistorySize = 1000;
+    config->setGlobalSettings(settings);
     const QString path = directory + "/command_history.json";
     QFile legacy(directory + "/command_history.txt");
     require(legacy.open(QIODevice::WriteOnly), "legacy file creation failed");
@@ -87,6 +95,95 @@ void storageTest(const QString &directory) {
     require(history.matches("cd sources/").size() == 2, "shared prefix did not match both paths");
     require(history.matches("cd sources/android-projects") == QStringList({"cd sources/android-projects"}), "unrelated path survived complete prefix matching");
     require(history.matches("cd sources/android-projects ").isEmpty(), "prefix matching ignored a typed trailing space");
+    settings.commandHistorySize = 10000;
+    config->setGlobalSettings(settings);
+}
+
+void capacityTest(const QString &directory) {
+    const QString path = directory + "/capacity_history.json";
+    QJsonArray commands;
+    for (int i = 0; i < 10005; ++i) commands.append(QString("command %1").arg(i));
+    QFile file(path);
+    require(file.open(QIODevice::WriteOnly), "could not seed capacity test history");
+    file.write(QJsonDocument(commands).toJson());
+    file.close();
+    CommandHistory history(path);
+    require(history.commands().size() == 10000 && history.commands().first() == "command 5",
+            "default capacity did not retain the latest 10000 commands on load");
+    history.add("new command");
+    require(history.commands().size() == 10000 && history.commands().first() == "command 6",
+            "default capacity did not evict the oldest command on add");
+    auto *config = ConfigManager::instance();
+    auto settings = config->globalSettings();
+    settings.commandHistorySize = 2;
+    config->setGlobalSettings(settings);
+    require(history.commands() == QStringList({"command 10004", "new command"}),
+            "reducing capacity did not immediately retain the newest commands");
+    require(CommandHistory(path).commands() == history.commands(), "reduced capacity was not persisted");
+    require(config->load() && config->globalSettings().commandHistorySize == 2, "history size setting was not persisted");
+    settings.commandHistorySize = 3;
+    config->setGlobalSettings(settings);
+    history.add("another command");
+    require(history.commands().size() == 3, "increasing capacity did not allow more commands");
+    settings.commandHistorySize = 1;
+    config->setGlobalSettings(settings);
+    history.add("last command");
+    require(history.commands() == QStringList({"last command"}), "minimum capacity was not enforced");
+    settings.commandHistorySize = 10000;
+    config->setGlobalSettings(settings);
+}
+
+void paginationTest() {
+    auto &history = CommandHistory::instance();
+    history.clear();
+    for (int i = 0; i < 45; ++i) history.add(QString("echo Command %1").arg(i));
+    CommandHistoryDialog dialog;
+    auto *list = dialog.findChild<QListWidget *>("commandHistoryList");
+    auto *search = dialog.findChild<QLineEdit *>("commandHistorySearch");
+    auto *previous = dialog.findChild<QPushButton *>("previousHistoryPage");
+    auto *next = dialog.findChild<QPushButton *>("nextHistoryPage");
+    auto *label = dialog.findChild<QLabel *>("commandHistoryPage");
+    const QString screenshot = qEnvironmentVariable("QSHELL_HISTORY_PAGINATION_SCREENSHOT");
+    if (!screenshot.isEmpty()) {
+        dialog.show();
+        QApplication::processEvents();
+        require(dialog.grab().save(screenshot), "could not save pagination screenshot");
+    }
+    require(list->count() == 20 && list->item(0)->text() == "echo Command 44" && !previous->isEnabled() && next->isEnabled(),
+            "first page did not show the newest 20 commands");
+    next->click();
+    require(list->count() == 20 && list->item(0)->text() == "echo Command 24" && previous->isEnabled(),
+            "second page is incorrect");
+    next->click();
+    require(list->count() == 5 && !next->isEnabled(), "last page or next-page boundary is incorrect");
+    previous->click();
+    require(list->item(0)->text() == "echo Command 24", "previous page did not navigate backwards");
+    search->setText("cOmMaNd");
+    require(list->count() == 20 && !previous->isEnabled() && next->isEnabled(),
+            "case-insensitive substring search did not reset pagination");
+    next->click();
+    require(list->item(0)->text() == "echo Command 24", "search results were not paginated");
+    search->setText("command 4");
+    require(list->count() == 6 && !next->isEnabled(), "substring search returned incorrect records");
+    list->setCurrentRow(0);
+    dialog.findChild<QPushButton *>("deleteHistorySelection")->click();
+    require(list->count() == 5 && !history.commands().contains("echo Command 44") && history.commands().size() == 44,
+            "deletion from search results removed incorrect records");
+    search->setText("no such command");
+    require(list->count() == 0 && !previous->isEnabled() && !next->isEnabled() && label->text() == "Page 0 / 0 (0 commands)",
+            "empty search results have incorrect pagination");
+    search->clear();
+    require(list->count() == 20 && !previous->isEnabled(), "clearing search did not restore the first page");
+    next->click();
+    next->click();
+    list->selectAll();
+    dialog.findChild<QPushButton *>("deleteHistorySelection")->click();
+    require(list->count() == 20 && previous->isEnabled() && !next->isEnabled() && history.commands().size() == 40,
+            "deleting the last page did not move back to the last valid page");
+    history.add("echo Command new");
+    require(next->isEnabled(), "live history changes did not update pagination");
+    history.clear();
+    require(list->count() == 0 && !previous->isEnabled() && !next->isEnabled(), "clearing history left stale pagination");
 }
 
 void editorTest() {
@@ -635,6 +732,8 @@ int main(int argc, char *argv[]) {
     QApplication::setApplicationName("qshell-command-history-test");
     Q_INIT_RESOURCE(qtermwidget);
     storageTest(directory.path());
+    capacityTest(directory.path());
+    paginationTest();
     editorTest();
     managementTest();
     terminalTest();

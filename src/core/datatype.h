@@ -286,6 +286,7 @@ struct GlobalSettings {
     QString colorScheme = "Tango";
     bool copyOnSelect = false;
     bool commandHistoryCompletion = true;
+    int commandHistorySize = 10000;
     bool debug = false;
     bool terminalTimestamp = false;
     bool autoSaveLog = false;
@@ -301,6 +302,7 @@ struct GlobalSettings {
         obj["colorScheme"] = colorScheme;
         obj["copyOnSelect"] = copyOnSelect;
         obj["commandHistoryCompletion"] = commandHistoryCompletion;
+        obj["commandHistorySize"] = commandHistorySize;
         obj["debug"] = debug;
         obj["terminalTimestamp"] = terminalTimestamp;
         obj["autoSaveLog"] = autoSaveLog;
@@ -318,6 +320,10 @@ struct GlobalSettings {
         settings.colorScheme = obj["colorScheme"].toString("Tango");
         settings.copyOnSelect = obj["copyOnSelect"].toBool();
         settings.commandHistoryCompletion = obj["commandHistoryCompletion"].toBool(true);
+        settings.commandHistorySize = obj["commandHistorySize"].toInt(10000);
+        if (settings.commandHistorySize < 1) {
+            settings.commandHistorySize = 10000;
+        }
         settings.debug = obj["debug"].toBool();
         settings.terminalTimestamp = obj["terminalTimestamp"].toBool(false);
         settings.autoSaveLog = obj["autoSaveLog"].toBool(false);

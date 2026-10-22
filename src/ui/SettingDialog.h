@@ -10,6 +10,7 @@
 #include <QVBoxLayout>
 #include <QCheckBox>
 #include <QHBoxLayout>
+#include <QSpinBox>
 
 
 class SettingDialog : public QDialog  {
@@ -33,6 +34,7 @@ private:
     QComboBox *colorSchemeEdit_ = nullptr;
     QCheckBox *copyOnSelectCheckBox_ = nullptr;
     QCheckBox *commandHistoryCompletionCheckBox_ = nullptr;
+    QSpinBox *commandHistorySizeSpinBox_ = nullptr;
     QCheckBox *debugCheckBox_ = nullptr;
     QCheckBox *terminalTimestampCheckBox_ = nullptr;
     QCheckBox *autoSaveLogCheckBox_ = nullptr;

@@ -4,6 +4,17 @@
 
 int main() {
     const GlobalSettings defaults;
+    if (defaults.commandHistorySize != 10000 ||
+        GlobalSettings::fromJson(QJsonObject()).commandHistorySize != 10000) {
+        qCritical() << "command history size must default to 10000 for new and legacy settings";
+        return 1;
+    }
+    for (const auto &value : {QJsonValue(0), QJsonValue(-1), QJsonValue("invalid")}) {
+        if (GlobalSettings::fromJson(QJsonObject{{"commandHistorySize", value}}).commandHistorySize != 10000) {
+            qCritical() << "invalid history size must fall back to the default";
+            return 1;
+        }
+    }
     if (!defaults.commandHistoryCompletion ||
         !GlobalSettings::fromJson(QJsonObject()).commandHistoryCompletion) {
         qCritical() << "command history completion must be enabled for new and legacy settings";
@@ -23,10 +34,12 @@ int main() {
     configured.autoSaveLogDirectory = QStringLiteral("/tmp/qshell-logs");
     configured.terminalTimestamp = true;
     configured.commandHistoryCompletion = false;
+    configured.commandHistorySize = 12345;
 
     const GlobalSettings restored =
             GlobalSettings::fromJson(configured.toJson());
     if (!restored.autoSaveLog || !restored.terminalTimestamp || restored.commandHistoryCompletion ||
+        restored.commandHistorySize != configured.commandHistorySize ||
         restored.autoSaveLogDirectory != configured.autoSaveLogDirectory) {
         qCritical() << "global settings did not survive JSON round trip";
         return 1;
