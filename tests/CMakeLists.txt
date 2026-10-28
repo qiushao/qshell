@@ -1,4 +1,11 @@
 if (UNIX)
+    add_executable(unix_pty_test unix_pty_test.cpp)
+    target_link_libraries(unix_pty_test Qt::Core ptyqt)
+    foreach(scenario boundary burst write lifecycle)
+        add_test(NAME unix_pty_${scenario}_test COMMAND unix_pty_test ${scenario})
+        set_tests_properties(unix_pty_${scenario}_test PROPERTIES TIMEOUT 15)
+    endforeach()
+
     add_executable(lua_serial_test
             lua_serial_test.cpp
             ../src/scriptengine/LuaSerialModule.cpp)

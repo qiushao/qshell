@@ -117,9 +117,17 @@ public:
     void moveToThread(QThread *targetThread);
 
 private:
+    void readAvailable();
+    bool flushWriteBuffer();
+    void stopIo();
+
     ShellProcess m_shellProcess;
     QSocketNotifier *m_readMasterNotify;
+    QSocketNotifier *m_writeMasterNotify;
     QByteArray m_shellReadBuffer;
+    QByteArray m_shellWriteBuffer;
+    qsizetype m_writeOffset = 0;
+    bool m_ptyClosed = true;
 };
 
 #endif // UNIXPTYPROCESS_H

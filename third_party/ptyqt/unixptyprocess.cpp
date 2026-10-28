@@ -8,6 +8,7 @@
 UnixPtyProcess::UnixPtyProcess()
     : IPtyProcess()
     , m_readMasterNotify(0)
+    , m_writeMasterNotify(0)
 {
     m_shellProcess.setWorkingDirectory(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
 }
@@ -30,7 +31,7 @@ bool UnixPtyProcess::startProcess(const QString &executable,
         return false;
     }
 
-    if (m_shellProcess.state() == QProcess::Running)
+    if (m_shellProcess.state() != QProcess::NotRunning)
         return false;
 
     QFileInfo fi(executable);
@@ -41,13 +42,15 @@ bool UnixPtyProcess::startProcess(const QString &executable,
         return false;
     }
 
+    kill();
+    m_lastError.clear();
     m_shellPath = executable;
     m_size = QPair<qint16, qint16>(cols, rows);
 
     int rc = 0;
 
-    m_shellProcess.m_handleMaster = ::posix_openpt(O_RDWR | O_NOCTTY);
-    if (m_shellProcess.m_handleMaster <= 0)
+    m_shellProcess.m_handleMaster = ::posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (m_shellProcess.m_handleMaster < 0)
     {
         m_lastError = QString("UnixPty Error: unable to open master -> %1").arg(strerror(errno));
         kill();
@@ -153,29 +156,6 @@ bool UnixPtyProcess::startProcess(const QString &executable,
         return false;
     }
 
-    m_readMasterNotify = new QSocketNotifier(m_shellProcess.m_handleMaster, QSocketNotifier::Read, &m_shellProcess);
-    m_readMasterNotify->setEnabled(true);
-    m_readMasterNotify->moveToThread(m_shellProcess.thread());
-    QObject::connect(m_readMasterNotify, &QSocketNotifier::activated, [this](int socket)
-    {
-        Q_UNUSED(socket)
-
-        QByteArray buffer;
-        int size = 1025;
-        int readSize = 1024;
-        QByteArray data;
-        do
-        {
-            char nativeBuffer[size];
-            int len = ::read(m_shellProcess.m_handleMaster, nativeBuffer, readSize);
-            data = QByteArray(nativeBuffer, len);
-            buffer.append(data);
-        } while (data.size() == readSize); //last data block always < readSize
-
-        m_shellReadBuffer.append(buffer);
-        m_shellProcess.emitReadyRead();
-    });
-
     QStringList defaultVars;
 
     defaultVars.append("TERM=xterm-256color");
@@ -215,7 +195,24 @@ bool UnixPtyProcess::startProcess(const QString &executable,
 
 
     m_shellProcess.start(m_shellPath, arguments);
-    m_shellProcess.waitForStarted();
+    if (!m_shellProcess.waitForStarted())
+    {
+        m_lastError = m_shellProcess.errorString();
+        kill();
+        return false;
+    }
+
+    // Only the child should hold the slave open, so its exit produces EOF/EIO.
+    ::close(m_shellProcess.m_handleSlave);
+    m_shellProcess.m_handleSlave = -1;
+    m_ptyClosed = false;
+    m_readMasterNotify = new QSocketNotifier(m_shellProcess.m_handleMaster, QSocketNotifier::Read, &m_shellProcess);
+    QObject::connect(m_readMasterNotify, &QSocketNotifier::activated, &m_shellProcess,
+                     [this]() { readAvailable(); });
+    m_writeMasterNotify = new QSocketNotifier(m_shellProcess.m_handleMaster, QSocketNotifier::Write, &m_shellProcess);
+    m_writeMasterNotify->setEnabled(false);
+    QObject::connect(m_writeMasterNotify, &QSocketNotifier::activated, &m_shellProcess,
+                     [this]() { flushWriteBuffer(); });
 
     m_pid = m_shellProcess.processId();
 
@@ -232,7 +229,7 @@ bool UnixPtyProcess::resize(qint16 cols, qint16 rows)
     winp.ws_xpixel = 0;
     winp.ws_ypixel = 0;
 
-    bool res =  ( (ioctl(m_shellProcess.m_handleMaster, TIOCSWINSZ, &winp) != -1) && (ioctl(m_shellProcess.m_handleSlave, TIOCSWINSZ, &winp) != -1) );
+    bool res = (ioctl(m_shellProcess.m_handleMaster, TIOCSWINSZ, &winp) != -1);
 
     if (res)
     {
@@ -244,6 +241,12 @@ bool UnixPtyProcess::resize(qint16 cols, qint16 rows)
 
 bool UnixPtyProcess::kill()
 {
+    stopIo();
+    delete m_readMasterNotify;
+    m_readMasterNotify = nullptr;
+    delete m_writeMasterNotify;
+    m_writeMasterNotify = nullptr;
+    m_shellReadBuffer.clear();
     m_shellProcess.m_handleSlaveName = QString();
     if (m_shellProcess.m_handleSlave >= 0)
     {
@@ -258,9 +261,6 @@ bool UnixPtyProcess::kill()
 
     if (m_shellProcess.state() == QProcess::Running)
     {
-        m_readMasterNotify->disconnect();
-        m_readMasterNotify->deleteLater();
-
         m_shellProcess.terminate();
         m_shellProcess.waitForFinished(1000);
 
@@ -307,10 +307,88 @@ QByteArray UnixPtyProcess::readAll()
 
 qint64 UnixPtyProcess::write(const QByteArray &byteArray)
 {
-    int result = ::write(m_shellProcess.m_handleMaster, byteArray.constData(), byteArray.size());
-    Q_UNUSED(result)
+    if (m_ptyClosed)
+        return -1;
 
+    m_shellWriteBuffer.append(byteArray);
+    if (!flushWriteBuffer())
+        return -1;
+
+    // Bytes are accepted into the queue; a writable notification sends the rest.
     return byteArray.size();
+}
+
+void UnixPtyProcess::readAvailable()
+{
+    QByteArray buffer;
+    // Bound each activation to 64 KiB so continuous output cannot starve the UI.
+    for (int attempt = 0; attempt < 16; ++attempt)
+    {
+        char data[4096];
+        const ssize_t count = ::read(m_shellProcess.m_handleMaster, data, sizeof(data));
+        if (count > 0)
+        {
+            buffer.append(data, count);
+            continue;
+        }
+        if (count < 0 && errno == EINTR)
+            continue;
+        if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            break;
+        // Linux PTYs report EIO when the last slave descriptor closes.
+        if (count < 0 && errno != EIO)
+            m_lastError = QString("UnixPty Error: read failed -> %1").arg(strerror(errno));
+        stopIo();
+        break;
+    }
+
+    if (!buffer.isEmpty())
+    {
+        m_shellReadBuffer.append(buffer);
+        m_shellProcess.emitReadyRead();
+    }
+}
+
+bool UnixPtyProcess::flushWriteBuffer()
+{
+    // Keep the unsent suffix across short writes and EAGAIN, in input order.
+    for (int attempt = 0; attempt < 16 && m_writeOffset < m_shellWriteBuffer.size(); ++attempt)
+    {
+        const qsizetype size = qMin<qsizetype>(4096, m_shellWriteBuffer.size() - m_writeOffset);
+        const ssize_t count = ::write(m_shellProcess.m_handleMaster,
+                                      m_shellWriteBuffer.constData() + m_writeOffset, size);
+        if (count > 0)
+        {
+            m_writeOffset += count;
+            continue;
+        }
+        if (count < 0 && errno == EINTR)
+            continue;
+        if (count == 0 || (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)))
+            break;
+        m_lastError = QString("UnixPty Error: write failed -> %1").arg(strerror(errno));
+        stopIo();
+        return false;
+    }
+
+    if (m_writeOffset == m_shellWriteBuffer.size())
+    {
+        m_shellWriteBuffer.clear();
+        m_writeOffset = 0;
+    }
+    m_writeMasterNotify->setEnabled(!m_shellWriteBuffer.isEmpty());
+    return true;
+}
+
+void UnixPtyProcess::stopIo()
+{
+    if (m_readMasterNotify)
+        m_readMasterNotify->setEnabled(false);
+    if (m_writeMasterNotify)
+        m_writeMasterNotify->setEnabled(false);
+    m_shellWriteBuffer.clear();
+    m_writeOffset = 0;
+    m_ptyClosed = true;
 }
 
 QString UnixPtyProcess::currentDir()
