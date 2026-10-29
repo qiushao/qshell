@@ -28,6 +28,58 @@ A ready-to-run directory containing `vcxsrv.exe` remains supported through `QSHE
 
 If no packaged runtime is present, QShell can fall back to an already-running X server on `127.0.0.1:6000`; automatic startup is unavailable in that fallback configuration.
 
+## Forwarding performance
+
+Linux/macOS sessions run system OpenSSH (`ssh -X`); Windows uses libssh2 and a
+loopback TCP connection to VcXsrv. The Windows bridge disables Nagle on both
+the SSH connection and the local X11 connection to avoid delaying small X11
+requests behind TCP acknowledgements.
+
+The event pump retries all channels on SSH read/write readiness, using
+`libssh2_session_block_directions()` to distinguish TCP send backpressure from
+waiting for a remote channel-window adjustment. In-flight write buffers and PTY
+resize arguments remain stable across `EAGAIN`. Reads and writes can buffer
+packets for other channels inside libssh2; those packets trigger a queued pump
+without waiting for another OS socket-read event. Per-channel batches are limited
+to 256 KiB, and local socket queues apply backpressure, so drawing bursts yield
+to the Qt event loop. Final remote drawing bytes drain before an X11 EOF closes
+the local connection.
+
+### Reproducing a performance check
+
+Use the same server, VcXsrv version, window size and network conditions for both
+builds. Close other benchmark/IDE instances first. Run one build at a time:
+
+```powershell
+.\qshell.exe --script D:/projects/qt/qshell/scripts/lua/x11_benchmark.lua -- <session-name> D:/temp/x11-result.log
+```
+
+The server must have `x11perf` installed. The script runs:
+
+```sh
+x11perf -repeat 3 -time 2 -rect500 -putimage500
+```
+
+Compare the aggregate `trep` rates, then run `studio.sh` and check editor
+scrolling, menu opening, window resizing and terminal input during drawing.
+`x11perf` operation rates are not Android Studio frame rates. IDE indexing,
+remote CPU load, Java rendering and VcXsrv rendering can still affect responsiveness;
+a Windows bridge fix does not make its rendering backend identical to Linux.
+
+The Windows-only `ssh_x11_pump_test` regression test uses deterministic transport
+backpressure to exercise writable-only recovery, inbound waits without spinning,
+stable write/resize retries, buffered cross-channel reads, bounded drawing batches,
+local backpressure and EOF draining:
+
+```powershell
+cmake --build build --config Release --target ssh_x11_pump_test
+ctest --test-dir build -C Release -R ssh_x11_pump_test --output-on-failure
+```
+
+When running from a build tree, Qt's `bin` directory must be on `PATH`, and
+`QT_PLUGIN_PATH` must point to its `plugins` directory so the offscreen test
+platform is available.
+
 ## Known Windows limitation
 
 The upstream VcXsrv TCP transport binds its display port on all local interfaces. A clean Windows profile can therefore show the standard Windows Defender Firewall consent dialog on the first VcXsrv launch. This one-time system prompt is accepted product behavior. Xauthority authentication prevents clients without the generated cookie from opening the display.

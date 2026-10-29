@@ -202,6 +202,21 @@ set_tests_properties(quick_button_focus_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
 
+if (MSVC)
+    # Compile the real Windows pump with deterministic transport substitutions.
+    get_target_property(QSHELL_X11_TEST_SOURCES session_timestamp_test SOURCES)
+    list(FILTER QSHELL_X11_TEST_SOURCES EXCLUDE REGEX "(^|/)session_timestamp_test\\.cpp$")
+    add_executable(ssh_x11_pump_test ssh_x11_pump_test.cpp ${QSHELL_X11_TEST_SOURCES}
+            ../src/ui/terminal/SSHTerminal.h
+            ../src/ui/terminal/WindowsX11Server.cpp)
+    target_link_libraries(ssh_x11_pump_test ${QSHELL_APP_LIBRARIES})
+    target_compile_definitions(ssh_x11_pump_test PRIVATE APP_VERSION="${APP_VERSION}")
+    add_test(NAME ssh_x11_pump_test COMMAND ssh_x11_pump_test)
+    set_tests_properties(ssh_x11_pump_test PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+            TIMEOUT 30)
+endif ()
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND)
     add_test(NAME i18n_catalog_test

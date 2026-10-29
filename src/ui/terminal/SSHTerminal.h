@@ -37,6 +37,7 @@ private:
     void cleanup();
     void resizePty(int cols, int rows);
     void syncPtySize();
+    void flushPendingResize();
     void readAvailableData();
 
 private slots:
@@ -45,6 +46,9 @@ private slots:
 
 private:
     void flushPendingWrite();
+    void scheduleIoPump();
+    void scheduleBufferedReads();
+    void watchSessionWrite();
 
 private:
     struct X11Forward {
@@ -54,6 +58,10 @@ private:
         QSocketNotifier *writable = nullptr;
         QByteArray toLocal;
         QByteArray toRemote;
+        // Keep the arguments of an EAGAIN write stable while new data queues.
+        QByteArray remoteWrite;
+        bool waitingForWindow = false;
+        bool remoteEof = false;
         bool closed = false;
     };
 
@@ -79,6 +87,11 @@ private:
     QSocketNotifier *readNotifier_ = nullptr;
     QSocketNotifier *writeNotifier_ = nullptr;
     QByteArray pendingWrite_;
+    QByteArray activeWrite_;
+    bool waitingForWriteWindow_ = false;
+    bool ioPumpScheduled_ = false;
+    QSize pendingPtySize_;
+    QSize activePtySize_;
 
     std::vector<LIBSSH2_CHANNEL *> pendingX11Chans_;
     std::vector<X11Forward *> x11Chans_;

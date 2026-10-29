@@ -7,6 +7,11 @@
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 
+namespace {
+constexpr qsizetype ioBatchBytes = 256 * 1024;
+constexpr qsizetype sshPacketBytes = 32700;
+}
+
 // ==================== SSHTerminal ====================
 
 SSHTerminal::SSHTerminal(const SessionData &session, QWidget *parent)
@@ -80,6 +85,7 @@ void SSHTerminal::disconnect() {
     }
 
     pendingWrite_.clear();
+    activeWrite_.clear();
 
     cleanup();
     qDebug() << "SSH disconnected from" << sessionData_.name;
@@ -89,12 +95,18 @@ void SSHTerminal::disconnect() {
 void SSHTerminal::onSocketReadyRead() {
     if (!running_ || !channel_) return;
 
+    // Recompute write interest across ALL channels. A channel waiting for an
+    // inbound window adjustment must not spin on an always-writable TCP socket.
+    if (writeNotifier_) writeNotifier_->setEnabled(false);
+
     // 临时禁用通知，避免重入
     if (readNotifier_) {
         readNotifier_->setEnabled(false);
     }
 
+    flushPendingResize();
     readAvailableData();   // 原有 shell 数据
+    if (!running_ || !channel_) return;
     // Processing inbound data frees SSH flow-control credit, so retry any
     // queued outbound bytes here as well as on socket writability.
     flushPendingWrite();
@@ -106,10 +118,48 @@ void SSHTerminal::onSocketReadyRead() {
         }
     }
     purgeClosedX11Forwards();
+    scheduleBufferedReads();
 
     // 重新启用通知
     if (readNotifier_ && running_) {
         readNotifier_->setEnabled(true);
+    }
+}
+
+void SSHTerminal::scheduleIoPump() {
+    if (!running_ || ioPumpScheduled_) return;
+    ioPumpScheduled_ = true;
+    QTimer::singleShot(0, this, [this]() {
+        ioPumpScheduled_ = false;
+        onSocketReadyRead();
+    });
+}
+
+void SSHTerminal::scheduleBufferedReads() {
+    if (!running_ || !channel_) return;
+    // libssh2_channel_write/read can consume packets for ANY channel. Those
+    // packets no longer make the OS socket readable, so explicitly drain them.
+    if (libssh2_poll_channel_read(channel_, 0) || libssh2_poll_channel_read(channel_, 1)
+        || libssh2_channel_eof(channel_)
+        || (waitingForWriteWindow_ && libssh2_channel_window_write(channel_) > 0)) {
+        scheduleIoPump();
+        return;
+    }
+    for (auto *xf : x11Chans_) {
+        if (!xf->closed
+            && ((xf->waitingForWindow && libssh2_channel_window_write(xf->chan) > 0)
+                || (!xf->remoteEof && xf->toLocal.size() < ioBatchBytes
+                    && (libssh2_poll_channel_read(xf->chan, 0) || libssh2_channel_eof(xf->chan))))) {
+            scheduleIoPump();
+            return;
+        }
+    }
+}
+
+void SSHTerminal::watchSessionWrite() {
+    if (writeNotifier_ && session_
+        && (libssh2_session_block_directions(session_) & LIBSSH2_SESSION_BLOCK_OUTBOUND)) {
+        writeNotifier_->setEnabled(true);
     }
 }
 
@@ -119,15 +169,18 @@ void SSHTerminal::readAvailableData() {
     char buffer[65536];  // 增大缓冲区
 
     // 循环读取所有可用数据
-    while (running_) {
+    qsizetype totalRead = 0;
+    while (running_ && totalRead < ioBatchBytes) {
         // 读取标准输出
         ssize_t bytesRead = libssh2_channel_read(channel_, buffer, sizeof(buffer));
 
         if (bytesRead > 0) {
+            totalRead += bytesRead;
             receiveBackendData(QByteArray(buffer,
                                           static_cast<int>(bytesRead)));
             continue;  // 继续尝试读取更多数据
         } else if (bytesRead == LIBSSH2_ERROR_EAGAIN) {
+            watchSessionWrite();
             // 没有更多数据可读
             break;
         } else if (bytesRead < 0) {
@@ -145,20 +198,24 @@ void SSHTerminal::readAvailableData() {
     }
 
     // 读取标准错误
-    while (running_) {
+    totalRead = 0;
+    while (running_ && totalRead < ioBatchBytes) {
         ssize_t bytesRead = libssh2_channel_read_stderr(channel_, buffer, sizeof(buffer));
 
         if (bytesRead > 0) {
+            totalRead += bytesRead;
             receiveBackendData(QByteArray(buffer,
                                           static_cast<int>(bytesRead)));
             continue;
         } else if (bytesRead == LIBSSH2_ERROR_EAGAIN || bytesRead <= 0) {
+            if (bytesRead == LIBSSH2_ERROR_EAGAIN) watchSessionWrite();
             break;
         }
     }
 
     // 检查连接是否关闭
-    if (channel_ && libssh2_channel_eof(channel_)) {
+    if (channel_ && libssh2_channel_eof(channel_)
+        && !libssh2_poll_channel_read(channel_, 0) && !libssh2_poll_channel_read(channel_, 1)) {
         QMessageBox::information(this, tr("SSH"), tr("Connection closed by remote host"));
         emit onSessionError(this);
         disconnect();
@@ -506,47 +563,50 @@ bool SSHTerminal::openChannel() {
 void SSHTerminal::writeToBackend(const QByteArray &data) {
     if (!channel_ || !running_ || data.isEmpty()) return;
 
-    // Queue first, then try to push. libssh2 returns EAGAIN when the TCP send
-    // window is full; spinning on it previously required re-entering the event
-    // loop from the input path, which dropped keystrokes. Instead we keep the
-    // remainder queued and retry from onSocketWritable()/onSocketReadyRead().
+    // Keep incoming input separate from a write awaiting an EAGAIN retry.
+    // Retry on the direction requested by libssh2 without re-entering Qt.
     pendingWrite_.append(data);
     flushPendingWrite();
+    scheduleBufferedReads();
 }
 
 void SSHTerminal::flushPendingWrite() {
-    if (pendingWrite_.isEmpty() || !channel_ || !running_) return;
+    if (!channel_ || !running_) return;
+    waitingForWriteWindow_ = false;
 
-    while (!pendingWrite_.isEmpty()) {
+    qsizetype totalWritten = 0;
+    while (!activeWrite_.isEmpty() || !pendingWrite_.isEmpty()) {
+        if (totalWritten >= ioBatchBytes) {
+            scheduleIoPump();
+            return;
+        }
+        if (activeWrite_.isEmpty()) {
+            activeWrite_ = pendingWrite_.left(sshPacketBytes);
+            pendingWrite_.remove(0, activeWrite_.size());
+        }
         const ssize_t written = libssh2_channel_write(
-                channel_, pendingWrite_.constData(), pendingWrite_.size());
+                channel_, activeWrite_.constData(), activeWrite_.size());
 
-        if (written == LIBSSH2_ERROR_EAGAIN) {
-            // Socket is not writable right now. Ask for a writability
-            // notification rather than blocking or polling.
-            if (writeNotifier_) {
-                writeNotifier_->setEnabled(true);
-            }
+        if (written == LIBSSH2_ERROR_EAGAIN || written == 0) {
+            waitingForWriteWindow_ = libssh2_channel_window_write(channel_) == 0;
+            watchSessionWrite();
             return;
         }
 
         if (written < 0) {
             pendingWrite_.clear();
+            activeWrite_.clear();
             emit onSessionError(this);
             return;
         }
 
-        pendingWrite_.remove(0, static_cast<int>(written));
-    }
-
-    if (writeNotifier_) {
-        writeNotifier_->setEnabled(false);
+        activeWrite_.remove(0, static_cast<int>(written));
+        totalWritten += written;
     }
 }
 
 void SSHTerminal::onSocketWritable() {
-    if (!running_ || !channel_) return;
-    flushPendingWrite();
+    onSocketReadyRead();
 }
 
 void SSHTerminal::resizePty(int cols, int rows) {
@@ -559,9 +619,27 @@ void SSHTerminal::resizePty(int cols, int rows) {
         rows = 24;
     }
 
-    int rc = libssh2_channel_request_pty_size(channel_, cols, rows);
-    if (rc != 0 && rc != LIBSSH2_ERROR_EAGAIN) {
-        qWarning() << "Failed to resize SSH PTY to" << cols << "x" << rows << "error" << rc;
+    pendingPtySize_ = QSize(cols, rows);
+    flushPendingResize();
+    scheduleBufferedReads();
+}
+
+void SSHTerminal::flushPendingResize() {
+    if (!channel_) return;
+    while (activePtySize_.isValid() || pendingPtySize_.isValid()) {
+        if (!activePtySize_.isValid()) {
+            activePtySize_ = pendingPtySize_;
+            pendingPtySize_ = QSize();
+        }
+        const int rc = libssh2_channel_request_pty_size(channel_, activePtySize_.width(), activePtySize_.height());
+        if (rc == LIBSSH2_ERROR_EAGAIN) {
+            watchSessionWrite();
+            return;
+        }
+        if (rc != 0) {
+            qWarning() << "Failed to resize SSH PTY to" << activePtySize_ << "error" << rc;
+        }
+        activePtySize_ = QSize();
     }
 }
 
@@ -618,6 +696,14 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
         return;
     }
 
+    // X11 mixes short requests, flushes and synchronous replies. Nagle on this
+    // loopback hop can delay a request behind the previous request's TCP ACK.
+    const int noDelay = 1;
+    if (setsockopt(xsock, IPPROTO_TCP, TCP_NODELAY,
+                   reinterpret_cast<const char *>(&noDelay), sizeof(noDelay)) != 0) {
+        qWarning() << "Failed to disable Nagle on X11 socket:" << WSAGetLastError();
+    }
+
     sockaddr_in addr {};
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(x11Server.port());
@@ -643,8 +729,9 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
     QObject::connect(xf->notifier, &QSocketNotifier::activated,
                      this, [this, xf](qintptr){
         char buf[16384];
-        for (;;) {
-            int n = recv(xf->xsock, buf, sizeof(buf), 0);
+        while (xf->toRemote.size() < ioBatchBytes) {
+            const int capacity = int(qMin(qsizetype(sizeof(buf)), ioBatchBytes - xf->toRemote.size()));
+            int n = recv(xf->xsock, buf, capacity, 0);
             if (n > 0) {
                 xf->toRemote.append(buf, n);
             } else if (n == 0) {
@@ -661,6 +748,7 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
             flushX11ToRemote(xf);
         }
         purgeClosedX11Forwards();
+        scheduleBufferedReads();
     });
 
     // 远端 -> 本地：写就绪（当 send() 返回 EWOULDBLOCK 时启用）
@@ -672,46 +760,52 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
             flushX11ToLocal(xf);
         }
         purgeClosedX11Forwards();
+        // There may be SSH channel data buffered while the local server was
+        // blocked, even though the SSH socket itself is no longer readable.
+        scheduleIoPump();
     });
 
     x11Chans_.push_back(xf);
     qDebug() << "X11 channel bridged to local display" << x11Server.displayName();
     pumpRemoteX11();
+    scheduleBufferedReads();
 }
 
 void SSHTerminal::pumpRemoteX11()
 {
     char buf[16384];
 
-    for (auto it = x11Chans_.begin(); it != x11Chans_.end(); ) {
-        X11Forward *xf = *it;
-        if (xf->closed) {
-            delete xf;
-            it = x11Chans_.erase(it);
-            continue;
-        }
+    for (auto *xf : x11Chans_) {
+        if (xf->closed) continue;
 
         // 远端可读 -> 累积到 toLocal
-        for (;;) {
-            ssize_t r = libssh2_channel_read(xf->chan, buf, sizeof(buf));
+        qsizetype totalRead = 0;
+        while (!xf->remoteEof && totalRead < ioBatchBytes && xf->toLocal.size() < ioBatchBytes) {
+            const auto capacity = qMin(qsizetype(sizeof(buf)), ioBatchBytes - xf->toLocal.size());
+            ssize_t r = libssh2_channel_read(xf->chan, buf, size_t(capacity));
             if (r > 0) {
                 xf->toLocal.append(buf, int(r));
+                totalRead += r;
+                // Deliver promptly instead of waiting for all remote drawing
+                // traffic to stop before giving the local X server any data.
+                flushX11ToLocal(xf);
+                if (xf->closed) break;
                 continue;
             } else if (r == LIBSSH2_ERROR_EAGAIN) {
+                watchSessionWrite();
                 break;
-            } else { // 关闭或错误
+            } else if (r == 0) {
+                // Zero is not an error. Drain final bytes before closing EOF.
+                xf->remoteEof = libssh2_channel_eof(xf->chan) != 0;
+                break;
+            } else {
                 closeX11Forward(xf);
-                delete xf;
-                it = x11Chans_.erase(it);
-                goto next_iter;
+                break;
             }
         }
 
-        // 将累积的 toLocal 写到本地 X server
         flushX11ToLocal(xf);
-        ++it;
-    next_iter:
-        ;
+        if (!xf->closed && totalRead >= ioBatchBytes) scheduleIoPump();
     }
 }
 
@@ -739,23 +833,42 @@ void SSHTerminal::flushX11ToLocal(X11Forward *xf)
     if (!xf->closed && xf->toLocal.isEmpty() && xf->writable) {
         xf->writable->setEnabled(false);
     }
+    if (!xf->closed && xf->remoteEof && xf->toLocal.isEmpty()) {
+        closeX11Forward(xf);
+    }
 }
 
 void SSHTerminal::flushX11ToRemote(X11Forward *xf)
 {
     if (!xf || xf->closed) return;
+    xf->waitingForWindow = false;
 
-    while (!xf->toRemote.isEmpty()) {
-        int w = libssh2_channel_write(xf->chan, xf->toRemote.constData(), xf->toRemote.size());
+    qsizetype totalWritten = 0;
+    while (!xf->remoteWrite.isEmpty() || !xf->toRemote.isEmpty()) {
+        if (totalWritten >= ioBatchBytes) {
+            scheduleIoPump();
+            break;
+        }
+        if (xf->remoteWrite.isEmpty()) {
+            xf->remoteWrite = xf->toRemote.left(sshPacketBytes);
+            xf->toRemote.remove(0, xf->remoteWrite.size());
+        }
+        const ssize_t w = libssh2_channel_write(xf->chan, xf->remoteWrite.constData(), xf->remoteWrite.size());
         if (w > 0) {
-            xf->toRemote.remove(0, w);
+            xf->remoteWrite.remove(0, w);
+            totalWritten += w;
             continue;
-        } else if (w == LIBSSH2_ERROR_EAGAIN) {
-            break; // 等下一轮 onSocketReadyRead()
+        } else if (w == LIBSSH2_ERROR_EAGAIN || w == 0) {
+            xf->waitingForWindow = libssh2_channel_window_write(xf->chan) == 0;
+            watchSessionWrite();
+            break;
         } else {
             closeX11Forward(xf);
             break;
         }
+    }
+    if (!xf->closed && xf->notifier) {
+        xf->notifier->setEnabled(xf->toRemote.size() < ioBatchBytes);
     }
 }
 
@@ -790,6 +903,7 @@ void SSHTerminal::closeX11Forward(X11Forward *xf)
 
     xf->toLocal.clear();
     xf->toRemote.clear();
+    xf->remoteWrite.clear();
 }
 
 void SSHTerminal::purgeClosedX11Forwards()
@@ -809,6 +923,10 @@ void SSHTerminal::purgeClosedX11Forwards()
 void SSHTerminal::cleanup() {
     running_ = false;
     pendingWrite_.clear();
+    activeWrite_.clear();
+    waitingForWriteWindow_ = false;
+    pendingPtySize_ = QSize();
+    activePtySize_ = QSize();
 
     for (LIBSSH2_CHANNEL *chan: pendingX11Chans_) {
         libssh2_channel_free(chan);
