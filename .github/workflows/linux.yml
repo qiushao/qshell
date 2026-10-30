@@ -32,7 +32,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt update
-          sudo apt install -y cmake build-essential clang-tidy
+          sudo apt install -y cmake build-essential clang-tidy libssl-dev xauth
 
       # 非 tag 推送：仅构建
       - name: Build Only

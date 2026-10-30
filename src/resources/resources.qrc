@@ -1,7 +1,6 @@
 <RCC>
   <qresource prefix="/">
     <file>settings.json</file>
-    <file>script/ssh_login.sh</file>
     <file>images/disable_log_session.png</file>
     <file>images/log_session.png</file>
     <file>images/connect_state.png</file>

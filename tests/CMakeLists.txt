@@ -202,20 +202,27 @@ set_tests_properties(quick_button_focus_test PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 30)
 
-if (MSVC)
-    # Compile the real Windows pump with deterministic transport substitutions.
-    get_target_property(QSHELL_X11_TEST_SOURCES session_timestamp_test SOURCES)
-    list(FILTER QSHELL_X11_TEST_SOURCES EXCLUDE REGEX "(^|/)session_timestamp_test\\.cpp$")
-    add_executable(ssh_x11_pump_test ssh_x11_pump_test.cpp ${QSHELL_X11_TEST_SOURCES}
-            ../src/ui/terminal/SSHTerminal.h
-            ../src/ui/terminal/WindowsX11Server.cpp)
-    target_link_libraries(ssh_x11_pump_test ${QSHELL_APP_LIBRARIES})
-    target_compile_definitions(ssh_x11_pump_test PRIVATE APP_VERSION="${APP_VERSION}")
-    add_test(NAME ssh_x11_pump_test COMMAND ssh_x11_pump_test)
-    set_tests_properties(ssh_x11_pump_test PROPERTIES
-            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-            TIMEOUT 30)
+# Compile the shared pump with deterministic transport substitutions.
+get_target_property(QSHELL_X11_TEST_SOURCES session_timestamp_test SOURCES)
+list(FILTER QSHELL_X11_TEST_SOURCES EXCLUDE REGEX "(^|/)session_timestamp_test\\.cpp$")
+if (WIN32)
+    list(APPEND QSHELL_X11_TEST_SOURCES ../src/ui/terminal/WindowsX11Server.cpp)
+else ()
+    list(APPEND QSHELL_X11_TEST_SOURCES ../src/ui/terminal/UnixX11Display.cpp)
+    add_executable(unix_x11_display_test unix_x11_display_test.cpp ../src/ui/terminal/UnixX11Display.cpp)
+    target_include_directories(unix_x11_display_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(unix_x11_display_test Qt::Network)
+    add_test(NAME unix_x11_display_test COMMAND unix_x11_display_test)
+    set_tests_properties(unix_x11_display_test PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
 endif ()
+add_executable(ssh_x11_pump_test ssh_x11_pump_test.cpp ${QSHELL_X11_TEST_SOURCES}
+        ../src/ui/terminal/SSHTerminal.h)
+target_link_libraries(ssh_x11_pump_test ${QSHELL_APP_LIBRARIES})
+target_compile_definitions(ssh_x11_pump_test PRIVATE APP_VERSION="${APP_VERSION}")
+add_test(NAME ssh_x11_pump_test COMMAND ssh_x11_pump_test)
+set_tests_properties(ssh_x11_pump_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 30)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if (Python3_Interpreter_FOUND)

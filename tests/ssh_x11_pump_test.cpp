@@ -1,8 +1,13 @@
-// Exercise the Windows event pump with deterministic SSH backpressure. The
+// Exercise the shared event pump with deterministic SSH backpressure. The
 // application code is included below with only its transport calls substituted;
 // no server, saved credentials or timing-sensitive network conditions are needed.
 #include "ui/terminal/BaseTerminal.h"
+#include "ui/terminal/SshSocket.h"
+#ifdef Q_OS_WIN
 #include "ui/terminal/WindowsX11Server.h"
+#else
+#include "ui/terminal/UnixX11Display.h"
+#endif
 #include <QApplication>
 #include <QDebug>
 #include <QDir>
@@ -14,8 +19,6 @@
 #include <cstring>
 #include <libssh2.h>
 #include <vector>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 
 #define private public
 #include "ui/terminal/SSHTerminal.h"
@@ -44,6 +47,21 @@ struct TestChannel {
     TestChannel *creditDuringRead = nullptr;
     LIBSSH2_CHANNEL *handle() { return reinterpret_cast<LIBSSH2_CHANNEL *>(this); }
 };
+
+int hostKeyType = LIBSSH2_HOSTKEY_TYPE_ED25519;
+QByteArray hostKey("saved-key");
+const char *testHostKey(LIBSSH2_SESSION *, size_t *length, int *type) {
+    *length = size_t(hostKey.size());
+    *type = hostKeyType;
+    return hostKey.constData();
+}
+const char *testHostHash(LIBSSH2_SESSION *, int) { return nullptr; }
+int testKnownHostsRead(LIBSSH2_KNOWNHOSTS *hosts, const char *, int) {
+    return libssh2_knownhost_addc(hosts, "test-host", nullptr, "saved-key", 9,
+                                 nullptr, 0, LIBSSH2_KNOWNHOST_TYPE_PLAIN |
+                                 LIBSSH2_KNOWNHOST_KEYENC_RAW | LIBSSH2_KNOWNHOST_KEY_ED25519, nullptr);
+}
+int testKnownHostsWrite(LIBSSH2_KNOWNHOSTS *, const char *, int) { return 0; }
 
 int directions = 0;
 bool localBlocked = false;
@@ -111,16 +129,24 @@ int testResize(LIBSSH2_CHANNEL *, int columns, int rows, int, int) {
     directions = LIBSSH2_SESSION_BLOCK_OUTBOUND;
     return resizeBlocked ? LIBSSH2_ERROR_EAGAIN : 0;
 }
-int testSend(SOCKET, const char *data, int size, int) {
+int testSend(libssh2_socket_t, const char *data, int size, int) {
     if (localBlocked) {
+#ifdef Q_OS_WIN
         WSASetLastError(WSAEWOULDBLOCK);
-        return SOCKET_ERROR;
+#else
+        errno = EWOULDBLOCK;
+#endif
+        return -1;
     }
     localOutput.append(data, size);
     return size;
 }
 }// namespace
 
+#define libssh2_session_hostkey testHostKey
+#define libssh2_hostkey_hash testHostHash
+#define libssh2_knownhost_readfile testKnownHostsRead
+#define libssh2_knownhost_writefile testKnownHostsWrite
 #define libssh2_channel_read_ex testRead
 #define libssh2_channel_write_ex testWrite
 #define libssh2_poll_channel_read testPoll
@@ -132,7 +158,7 @@ int testSend(SOCKET, const char *data, int size, int) {
 #define libssh2_channel_close testClose
 #define libssh2_channel_request_pty_size_ex testResize
 #define send testSend
-#include "../src/ui/terminal/SSHTerminalWindows.cpp"
+#include "../src/ui/terminal/SSHTerminal.cpp"
 #undef send
 
 int main(int argc, char *argv[]) {
@@ -140,6 +166,31 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("qshell-x11-pump-test");
     QCoreApplication::setApplicationName("qshell-x11-pump-test");
+    {
+        SessionData data;
+        data.sshConfig.host = "test-host";
+        data.sshConfig.port = 22;
+        SSHTerminal verifier(data);
+        verifier.session_ = libssh2_session_init();
+        require(verifier.session_ != nullptr, "cannot allocate verification session");
+        QObject::connect(&verifier, &BaseTerminal::onSessionError, &verifier,
+                         [&verifier](BaseTerminal *) { verifier.disconnect(); });
+        // Close any error dialog automatically, just as the user clicks OK.
+        QTimer closer;
+        QObject::connect(&closer, &QTimer::timeout, [] {
+            if (auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+                dialog->accept();
+        });
+        closer.start(10);
+        require(verifier.verifyHostKey(), "matching stored key was rejected");
+        hostKeyType = LIBSSH2_HOSTKEY_TYPE_ECDSA_256;
+        hostKey = "ecdsa-key";
+        require(verifier.verifyHostKey(), "different key algorithm was reported as a changed key");
+        hostKeyType = LIBSSH2_HOSTKEY_TYPE_ED25519;
+        hostKey = "changed-key";
+        require(!verifier.verifyHostKey(), "changed key of the same algorithm was accepted");
+        require(verifier.session_ == nullptr, "error handler did not disconnect synchronously");
+    }
     TestChannel shell;
     TestChannel x11;
     SSHTerminal terminal(SessionData{});
@@ -147,8 +198,8 @@ int main(int argc, char *argv[]) {
     terminal.channel_ = shell.handle();
     // Only the substituted block-directions function uses this sentinel.
     terminal.session_ = reinterpret_cast<LIBSSH2_SESSION *>(1);
-    const SOCKET socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    require(socket != INVALID_SOCKET, "cannot allocate notifier socket");
+    const libssh2_socket_t socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    require(socket != LIBSSH2_INVALID_SOCKET, "cannot allocate notifier socket");
     terminal.writeNotifier_ = new QSocketNotifier(qintptr(socket), QSocketNotifier::Write, &terminal);
     terminal.writeNotifier_->setEnabled(false);
     auto *forward = new SSHTerminal::X11Forward;
@@ -266,7 +317,7 @@ int main(int argc, char *argv[]) {
 
     terminal.session_ = nullptr;
     terminal.disconnect();
-    closesocket(socket);
-    qInfo() << "Windows SSH/X11 retries, buffered reads, fairness, backpressure and EOF passed";
+    SshSocket::close(socket);
+    qInfo() << "Shared SSH/X11 retries, buffered reads, fairness, backpressure and EOF passed";
     return 0;
 }

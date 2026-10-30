@@ -31,7 +31,7 @@ jobs:
       - name: Install prerequisites
         run: |
           ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)" < /dev/null 2> /dev/null
-          brew install create-dmg coreutils cmake
+          brew install create-dmg coreutils cmake openssl@3
 
       # 准备 macOS 图标
       - name: Prepare macOS Icon

@@ -1,11 +1,14 @@
 #include "SSHTerminal.h"
+#ifdef Q_OS_WIN
 #include "WindowsX11Server.h"
+#endif
 #include "qtermwidget.h"
 #include <QDebug>
 #include <QMessageBox>
 #include <QTimer>
-#include <ws2tcpip.h>
+#ifdef Q_CC_MSVC
 #pragma comment(lib, "ws2_32.lib")
+#endif
 
 namespace {
 constexpr qsizetype ioBatchBytes = 256 * 1024;
@@ -18,8 +21,10 @@ SSHTerminal::SSHTerminal(const SessionData &session, QWidget *parent)
     : BaseTerminal(parent) {
 
     sessionData_ = session;
+#ifdef Q_OS_WIN
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
     libssh2_init(0);
 
     // 终端大小改变时通知 SSH
@@ -31,7 +36,9 @@ SSHTerminal::SSHTerminal(const SessionData &session, QWidget *parent)
 SSHTerminal::~SSHTerminal() {
     disconnect();
     libssh2_exit();
+#ifdef Q_OS_WIN
     WSACleanup();
+#endif
 }
 
 void SSHTerminal::connect() {
@@ -236,17 +243,23 @@ QString SSHTerminal::getKnownHostsPath() {
 
 bool SSHTerminal::createSocket() {
     sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock_ == INVALID_SOCKET) {
+    if (sock_ == LIBSSH2_INVALID_SOCKET) {
         QMessageBox::critical(this, tr("SSH Error"),
-            tr("Failed to create socket: %1").arg(WSAGetLastError()));
+            tr("Failed to create socket: %1").arg(SshSocket::lastError()));
         emit onSessionError(this);
         return false;
     }
 
     // 设置 socket 超时
+#ifdef Q_OS_WIN
     DWORD timeout = 30000;
+#else
+    timeval timeout {30, 0};
+#endif
     setsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
     setsockopt(sock_, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+
+    SshSocket::suppressSigPipe(sock_);
 
     // 禁用 Nagle 算法，减少延迟
     int flag = 1;
@@ -364,13 +377,43 @@ bool SSHTerminal::verifyHostKey() {
         qDebug() << "Host fingerprint (SHA256):" << fingerprintStr;
     }
 
+    int typeFlag = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW;
+
+    switch (keyType) {
+        case LIBSSH2_HOSTKEY_TYPE_RSA:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_SSHRSA;
+            break;
+        case LIBSSH2_HOSTKEY_TYPE_DSS:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_SSHDSS;
+            break;
+#ifdef LIBSSH2_HOSTKEY_TYPE_ECDSA_256
+        case LIBSSH2_HOSTKEY_TYPE_ECDSA_256:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_256;
+            break;
+        case LIBSSH2_HOSTKEY_TYPE_ECDSA_384:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_384;
+            break;
+        case LIBSSH2_HOSTKEY_TYPE_ECDSA_521:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_521;
+            break;
+#endif
+#ifdef LIBSSH2_HOSTKEY_TYPE_ED25519
+        case LIBSSH2_HOSTKEY_TYPE_ED25519:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_ED25519;
+            break;
+#endif
+        default:
+            typeFlag |= LIBSSH2_KNOWNHOST_KEY_UNKNOWN;
+            break;
+    }
+
     struct libssh2_knownhost *host = nullptr;
     int checkResult = libssh2_knownhost_checkp(
         knownHosts,
         sessionData_.sshConfig.host.toUtf8().constData(),
         sessionData_.sshConfig.port,
         key, keyLen,
-        LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW,
+        typeFlag,
         &host
     );
 
@@ -383,36 +426,6 @@ bool SSHTerminal::verifyHostKey() {
 
         case LIBSSH2_KNOWNHOST_CHECK_NOTFOUND: {
             qDebug() << "New host, adding to known_hosts";
-
-            int typeFlag = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW;
-
-            switch (keyType) {
-                case LIBSSH2_HOSTKEY_TYPE_RSA:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_SSHRSA;
-                    break;
-                case LIBSSH2_HOSTKEY_TYPE_DSS:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_SSHDSS;
-                    break;
-#ifdef LIBSSH2_HOSTKEY_TYPE_ECDSA_256
-                case LIBSSH2_HOSTKEY_TYPE_ECDSA_256:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_256;
-                    break;
-                case LIBSSH2_HOSTKEY_TYPE_ECDSA_384:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_384;
-                    break;
-                case LIBSSH2_HOSTKEY_TYPE_ECDSA_521:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_ECDSA_521;
-                    break;
-#endif
-#ifdef LIBSSH2_HOSTKEY_TYPE_ED25519
-                case LIBSSH2_HOSTKEY_TYPE_ED25519:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_ED25519;
-                    break;
-#endif
-                default:
-                    typeFlag |= LIBSSH2_KNOWNHOST_KEY_UNKNOWN;
-                    break;
-            }
 
             int addResult = libssh2_knownhost_addc(
                 knownHosts,
@@ -439,7 +452,6 @@ bool SSHTerminal::verifyHostKey() {
                     .arg(sessionData_.sshConfig.host)
                     .arg(fingerprintStr)
                     .arg(knownHostsPath));
-            emit onSessionError(this);
             result = false;
             break;
 
@@ -448,7 +460,9 @@ bool SSHTerminal::verifyHostKey() {
             break;
     }
 
+    // Error handlers may disconnect and free session_, which owns knownHosts.
     libssh2_knownhost_free(knownHosts);
+    if (!result) emit onSessionError(this);
     return result;
 }
 
@@ -521,14 +535,22 @@ bool SSHTerminal::openChannel() {
 
     // —— 请求 X11 转发（0=允许多连接）——
     x11ForwardingEnabled_ = false;
+#ifdef Q_OS_WIN
     auto &x11Server = WindowsX11Server::instance();
-    if (x11Server.ensureRunning()) {
+    const bool x11Ready = x11Server.ensureRunning();
+    const int screen = 0;
+#else
+    auto &x11Server = x11Display_;
+    const bool x11Ready = x11Server.prepare();
+    const int screen = x11Server.screen();
+#endif
+    if (x11Ready) {
         const QByteArray authenticationProtocol = x11Server.authenticationProtocol();
         const QByteArray authenticationCookie = x11Server.authenticationCookie();
         if (!authenticationProtocol.isEmpty() && !authenticationCookie.isEmpty()) {
             rc = libssh2_channel_x11_req_ex(channel_, 0,
                                             authenticationProtocol.constData(),
-                                            authenticationCookie.constData(), 0);
+                                            authenticationCookie.constData(), screen);
         } else {
             rc = libssh2_channel_x11_req(channel_, 0);
         }
@@ -682,16 +704,23 @@ void SSHTerminal::drainPendingX11Channels()
 
 void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
 {
+#ifdef Q_OS_WIN
     auto &x11Server = WindowsX11Server::instance();
-    if (!x11ForwardingEnabled_ || !x11Server.ensureRunning()) {
+    const bool x11Ready = x11ForwardingEnabled_ && x11Server.ensureRunning();
+#else
+    auto &x11Server = x11Display_;
+    const bool x11Ready = x11ForwardingEnabled_;
+#endif
+    if (!x11Ready) {
         libssh2_channel_free(chan);
         qWarning() << "Rejected X11 channel because no local X11 server is available";
         return;
     }
 
-    // Bridge the SSH X11 child channel to the local X server selected by WindowsX11Server.
-    SOCKET xsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (xsock == INVALID_SOCKET) {
+    // Bridge the SSH X11 child channel to the selected local X server.
+#ifdef Q_OS_WIN
+    libssh2_socket_t xsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (xsock == LIBSSH2_INVALID_SOCKET) {
         libssh2_channel_free(chan);
         return;
     }
@@ -701,7 +730,7 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
     const int noDelay = 1;
     if (setsockopt(xsock, IPPROTO_TCP, TCP_NODELAY,
                    reinterpret_cast<const char *>(&noDelay), sizeof(noDelay)) != 0) {
-        qWarning() << "Failed to disable Nagle on X11 socket:" << WSAGetLastError();
+        qWarning() << "Failed to disable Nagle on X11 socket:" << SshSocket::lastError();
     }
 
     sockaddr_in addr {};
@@ -710,15 +739,27 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
 
     if (::connect(xsock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-        closesocket(xsock);
+        SshSocket::close(xsock);
         libssh2_channel_free(chan);
         qWarning() << "Failed to connect to local X server on" << x11Server.host() << x11Server.port();
         return;
     }
 
-    // 非阻塞
-    u_long nb = 1;
-    ioctlsocket(xsock, FIONBIO, &nb);
+#else
+    const libssh2_socket_t xsock = x11Server.connectSocket();
+    if (xsock == LIBSSH2_INVALID_SOCKET) {
+        libssh2_channel_free(chan);
+        qWarning() << "Failed to connect to local X server at" << x11Server.displayName();
+        return;
+    }
+#endif
+
+    SshSocket::suppressSigPipe(xsock);
+    if (!SshSocket::setNonBlocking(xsock)) {
+        SshSocket::close(xsock);
+        libssh2_channel_free(chan);
+        return;
+    }
 
     auto *xf = new X11Forward;
     xf->chan  = chan;
@@ -738,8 +779,8 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
                 closeX11Forward(xf);
                 break;
             } else {
-                int err = WSAGetLastError();
-                if (err == WSAEWOULDBLOCK) break;
+                int err = SshSocket::lastError();
+                if (SshSocket::wouldBlock(err)) break;
                 closeX11Forward(xf);
                 break;
             }
@@ -814,15 +855,15 @@ void SSHTerminal::flushX11ToLocal(X11Forward *xf)
     if (!xf || xf->closed) return;
 
     while (!xf->toLocal.isEmpty()) {
-        int w = send(xf->xsock, xf->toLocal.constData(), xf->toLocal.size(), 0);
+        int w = send(xf->xsock, xf->toLocal.constData(), xf->toLocal.size(), SshSocket::sendFlags);
         if (w > 0) {
             xf->toLocal.remove(0, w);
         } else if (w == 0) {
             closeX11Forward(xf);
             break;
         } else {
-            int err = WSAGetLastError();
-            if (err == WSAEWOULDBLOCK) {
+            int err = SshSocket::lastError();
+            if (SshSocket::wouldBlock(err)) {
                 if (xf->writable) xf->writable->setEnabled(true);
                 break;
             }
@@ -896,9 +937,9 @@ void SSHTerminal::closeX11Forward(X11Forward *xf)
         xf->chan = nullptr;
     }
 
-    if (xf->xsock != INVALID_SOCKET) {
-        closesocket(xf->xsock);
-        xf->xsock = INVALID_SOCKET;
+    if (xf->xsock != LIBSSH2_INVALID_SOCKET) {
+        SshSocket::close(xf->xsock);
+        xf->xsock = LIBSSH2_INVALID_SOCKET;
     }
 
     xf->toLocal.clear();
@@ -954,8 +995,8 @@ void SSHTerminal::cleanup() {
         session_ = nullptr;
     }
 
-    if (sock_ != INVALID_SOCKET) {
-        closesocket(sock_);
-        sock_ = INVALID_SOCKET;
+    if (sock_ != LIBSSH2_INVALID_SOCKET) {
+        SshSocket::close(sock_);
+        sock_ = LIBSSH2_INVALID_SOCKET;
     }
 }

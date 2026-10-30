@@ -7,10 +7,10 @@
 #include <QFile>
 #include <QSocketNotifier>
 
-#if defined(Q_CC_MSVC)
+#include "SshSocket.h"
 #include <vector>
-#include <winsock2.h>
-#include <libssh2.h>
+#ifndef Q_OS_WIN
+#include "UnixX11Display.h"
 #endif
 
 class SSHTerminal : public BaseTerminal {
@@ -24,7 +24,6 @@ public:
 protected:
     void writeToBackend(const QByteArray &data) override;
 
-#if defined(Q_CC_MSVC)
 private:
     bool createSocket();
     bool connectToHost();
@@ -53,7 +52,7 @@ private:
 private:
     struct X11Forward {
         LIBSSH2_CHANNEL *chan = nullptr;
-        SOCKET xsock = INVALID_SOCKET;
+        libssh2_socket_t xsock = LIBSSH2_INVALID_SOCKET;
         QSocketNotifier *notifier = nullptr;
         QSocketNotifier *writable = nullptr;
         QByteArray toLocal;
@@ -79,7 +78,7 @@ private:
     void purgeClosedX11Forwards();
 
 private:
-    SOCKET sock_ = INVALID_SOCKET;
+    libssh2_socket_t sock_ = LIBSSH2_INVALID_SOCKET;
     LIBSSH2_SESSION *session_ = nullptr;
     LIBSSH2_CHANNEL *channel_ = nullptr;
     bool running_ = false;
@@ -95,6 +94,8 @@ private:
 
     std::vector<LIBSSH2_CHANNEL *> pendingX11Chans_;
     std::vector<X11Forward *> x11Chans_;
+#ifndef Q_OS_WIN
+    UnixX11Display x11Display_;
 #endif
 };
 

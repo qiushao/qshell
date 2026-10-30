@@ -30,10 +30,11 @@ If no packaged runtime is present, QShell can fall back to an already-running X 
 
 ## Forwarding performance
 
-Linux/macOS sessions run system OpenSSH (`ssh -X`); Windows uses libssh2 and a
-loopback TCP connection to VcXsrv. The Windows bridge disables Nagle on both
-the SSH connection and the local X11 connection to avoid delaying small X11
-requests behind TCP acknowledgements.
+All platforms share the libssh2 SSH connection and X11 event pump. Windows uses a
+loopback TCP connection to VcXsrv; Linux/macOS connect to the Unix socket or TCP
+endpoint selected by `DISPLAY`, using its Xauthority cookie. TCP connections
+disable Nagle to avoid delaying small X11 requests behind TCP acknowledgements.
+See [build and runtime requirements](../BUILD.md#ssh-与-x11).
 
 The event pump retries all channels on SSH read/write readiness, using
 `libssh2_session_block_directions()` to distinguish TCP send backpressure from
@@ -66,7 +67,7 @@ scrolling, menu opening, window resizing and terminal input during drawing.
 remote CPU load, Java rendering and VcXsrv rendering can still affect responsiveness;
 a Windows bridge fix does not make its rendering backend identical to Linux.
 
-The Windows-only `ssh_x11_pump_test` regression test uses deterministic transport
+The cross-platform `ssh_x11_pump_test` regression test uses deterministic transport
 backpressure to exercise writable-only recovery, inbound waits without spinning,
 stable write/resize retries, buffered cross-channel reads, bounded drawing batches,
 local backpressure and EOF draining:

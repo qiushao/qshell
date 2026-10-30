@@ -61,6 +61,8 @@ set(SRC_FILES main.cpp
         ui/terminal/SerialTerminal.cpp
         ui/terminal/LocalTerminal.cpp
         ui/terminal/SSHTerminal.h
+        ui/terminal/SSHTerminal.cpp
+        ui/terminal/SshSocket.h
         ui/command/CommandHistoryDialog.cpp
         ui/command/CommandWindow.cpp
         ui/command/CommandCompletionPopup.cpp
@@ -81,7 +83,7 @@ set(SRC_FILES main.cpp
 )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    set(SRC_FILES ${SRC_FILES} ui/terminal/SSHTerminalLinux.cpp)
+    set(SRC_FILES ${SRC_FILES} ui/terminal/UnixX11Display.cpp ui/terminal/UnixX11Display.h)
 elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     enable_language(RC)
     configure_file(
@@ -90,7 +92,6 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
             @ONLY
     )
     set(SRC_FILES ${SRC_FILES}
-            ui/terminal/SSHTerminalWindows.cpp
             ui/terminal/WindowsX11Server.cpp
             ui/terminal/WindowsX11Server.h
             "${CMAKE_CURRENT_BINARY_DIR}/qshell.rc")
@@ -103,7 +104,6 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
             ${SRC_FILES}
             resources/resources.qrc
     )
-    target_link_libraries(qshell libssh2_static)
 else ()
     add_executable(qshell
             ${SRC_FILES}
@@ -112,6 +112,7 @@ else ()
 endif ()
 
 target_link_libraries(qshell
+        libssh2_static
         qshell_i18n
         Qt::Core
         Qt::Gui
@@ -233,6 +234,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
             "libqt6core6, libqt6gui6, libqt6widgets6, libqt6serialport6"
     )
+    set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "xauth")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 
     include(CPack)
