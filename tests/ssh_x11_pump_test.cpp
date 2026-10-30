@@ -158,8 +158,14 @@ int testSend(libssh2_socket_t, const char *data, int size, int) {
 #define libssh2_channel_close testClose
 #define libssh2_channel_request_pty_size_ex testResize
 #define send testSend
+// Include the implementation so the transport substitutions above apply.
+// NOLINTNEXTLINE(bugprone-suspicious-include)
 #include "../src/ui/terminal/SSHTerminal.cpp"
 #undef send
+
+// Use the same access-modified declaration for MOC and implementation: MSVC
+// encodes member access in symbol names.
+#include "moc_SSHTerminal.cpp" // NOLINT(bugprone-suspicious-include)
 
 int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(qtermwidget);

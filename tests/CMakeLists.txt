@@ -217,6 +217,7 @@ else ()
 endif ()
 add_executable(ssh_x11_pump_test ssh_x11_pump_test.cpp ${QSHELL_X11_TEST_SOURCES}
         ../src/ui/terminal/SSHTerminal.h)
+target_include_directories(ssh_x11_pump_test PRIVATE ${CMAKE_SOURCE_DIR}/src/ui/terminal)
 target_link_libraries(ssh_x11_pump_test ${QSHELL_APP_LIBRARIES})
 target_compile_definitions(ssh_x11_pump_test PRIVATE APP_VERSION="${APP_VERSION}")
 add_test(NAME ssh_x11_pump_test COMMAND ssh_x11_pump_test)
