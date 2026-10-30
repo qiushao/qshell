@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
     require(forward->toLocal.size() <= ioBatchBytes, "local backpressure queue is unbounded");
     require(forward->writable->isEnabled(), "local backpressure has no write wakeup");
     localBlocked = false;
-    terminal.flushX11ToLocal(forward);
+    SSHTerminal::flushX11ToLocal(forward);
     while (!x11.incoming.isEmpty()) terminal.pumpRemoteX11();
     require(localOutput == drawing, "local backpressure lost drawing bytes");
     localOutput.clear();
@@ -312,7 +312,7 @@ int main(int argc, char *argv[]) {
     terminal.pumpRemoteX11();
     require(!forward->closed && !x11.freed, "EOF discarded pending local bytes");
     localBlocked = false;
-    terminal.flushX11ToLocal(forward);
+    SSHTerminal::flushX11ToLocal(forward);
     require(localOutput == "final drawing" && x11.freed, "EOF did not flush before close");
 
     terminal.session_ = nullptr;

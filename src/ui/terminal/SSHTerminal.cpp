@@ -772,7 +772,7 @@ void SSHTerminal::handleNewX11Channel(LIBSSH2_CHANNEL *chan)
         char buf[16384];
         while (xf->toRemote.size() < ioBatchBytes) {
             const int capacity = int(qMin(qsizetype(sizeof(buf)), ioBatchBytes - xf->toRemote.size()));
-            int n = recv(xf->xsock, buf, capacity, 0);
+            auto n = recv(xf->xsock, buf, capacity, 0);
             if (n > 0) {
                 xf->toRemote.append(buf, n);
             } else if (n == 0) {
@@ -855,7 +855,7 @@ void SSHTerminal::flushX11ToLocal(X11Forward *xf)
     if (!xf || xf->closed) return;
 
     while (!xf->toLocal.isEmpty()) {
-        int w = send(xf->xsock, xf->toLocal.constData(), xf->toLocal.size(), SshSocket::sendFlags);
+        auto w = send(xf->xsock, xf->toLocal.constData(), xf->toLocal.size(), SshSocket::sendFlags);
         if (w > 0) {
             xf->toLocal.remove(0, w);
         } else if (w == 0) {

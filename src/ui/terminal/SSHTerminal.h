@@ -32,7 +32,7 @@ private:
     bool authenticate();
     bool openChannel();
 
-    QString getKnownHostsPath();
+    static QString getKnownHostsPath();
     void cleanup();
     void resizePty(int cols, int rows);
     void syncPtySize();
@@ -72,9 +72,9 @@ private:
     void drainPendingX11Channels();
     void handleNewX11Channel(LIBSSH2_CHANNEL *chan);
     void pumpRemoteX11();
-    void flushX11ToLocal(X11Forward *xf);
+    static void flushX11ToLocal(X11Forward *xf);
     void flushX11ToRemote(X11Forward *xf);
-    void closeX11Forward(X11Forward *xf);
+    static void closeX11Forward(X11Forward *xf);
     void purgeClosedX11Forwards();
 
 private:
